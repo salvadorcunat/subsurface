@@ -37,7 +37,7 @@ matrix:
             - libicu52
             # For SmartTrak import
             - libglib2.0-dev
-            - mdbtools
+            - mdbtools-dev
 # TODO: caching
 #      cache:
 #          timeout: 300
