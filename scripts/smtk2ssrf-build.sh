@@ -39,15 +39,20 @@ function aborting() {
 	exit 1
 }
 
-printf "
-*****  WARNING  *****
-Please, note that this script will render your Subsurface binary unusable.
-So, if you are using the binary placed in build directory, you will need
-to rebuild it after running this script.
+if [ -z "$TRAVIS" || "$TRAVIS" != "true" ]; then
+	printf "
+	*****  WARNING  *****
+	Please, note that this script will render your Subsurface binary unusable.
+	So, if you are using the binary placed in build directory, you will need
+	to rebuild it after running this script.
 
-Proceed? [y/n]\n"
+	Proceed? [y/n]\n"
 
-read -rs _proceed
+	read -rs _proceed
+else
+	_proceed="y"
+fi
+
 [[ $_proceed != "y" && $_proceed != "Y" ]] && exit 0
 
 # check for arguments and set options if any
