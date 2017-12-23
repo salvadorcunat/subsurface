@@ -12,5 +12,5 @@ export CMAKE_PREFIX_PATH=$QT_ROOT/lib/cmake
 # the global build script expects to be called from the directory ABOVE subsurface
 cd ..
 
-bash -e -x ./subsurface/scripts/smtk2ssrf-build -b Debug
+bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh -b Debug
 
