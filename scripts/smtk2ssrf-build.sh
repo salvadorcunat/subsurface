@@ -31,6 +31,7 @@ RELEASE=Release
 BASEDIR="$(pwd)"
 INSTALL_ROOT="$BASEDIR"/install-root
 SSRF_PATH="$BASEDIR"/subsurface
+_TRAVIS="${TRAVIS:-false}"
 
 # Display an error message if we need to bail out
 #
@@ -39,7 +40,7 @@ function aborting() {
 	exit 1
 }
 
-if [ -z "$TRAVIS" ] || [ "$TRAVIS" != "true" ]; then
+if [ -z "$_TRAVIS" ] || [ "$_TRAVIS" != "true" ]; then
 	printf "
 	*****  WARNING  *****
 	Please, note that this script will render your Subsurface binary unusable.
@@ -122,8 +123,10 @@ fi
 # We are going to modify some of the building parameters of Subsurface so
 # will get a copy of the cmake cache to restore them after building smtk2ssrf.
 cd "$SSRF_PATH" || aborting "Couldn't cd into $SSRF_PATH"
-echo "----> Saving a copy of $SSRF_PATH/build/CMakeCache.txt"
-cp -vf "$SSRF_PATH/build/CMakeCache.txt" "$SSRF_PATH/build/CMakeCache.txt.bak"
+if [ "$_TRAVIS" != "true" ]; then
+	echo "----> Saving a copy of $SSRF_PATH/build/CMakeCache.txt"
+	cp -vf "$SSRF_PATH/build/CMakeCache.txt" "$SSRF_PATH/build/CMakeCache.txt.bak"
+fi
 if [ ! "$SSRF_TAG" == "" ]; then
 	PREV_GIT="$(git branch --no-color 2> /dev/null | sed -e '/^[^*]/d')"
 	PREV_GIT=${PREV_GIT##*\ }; PREV_GIT=${PREV_GIT%)}
@@ -132,7 +135,7 @@ fi
 
 # abort if git checkout failed
 if [ ! -z "$STATUS" ] && [ "$STATUS" -eq 1 ]; then
-	mv -f "$SSRF_PATH/build/CMakeCache.txt.bak" "$SSRF_PATH/build/CMakeCache.txt"
+	[[ $_TRAVIS == "false" ]] && mv -f "$SSRF_PATH/build/CMakeCache.txt.bak" "$SSRF_PATH/build/CMakeCache.txt"
 	aborting "Couldn't checkout $SSRF_TAG. Is it correct?"
 fi
 
@@ -157,7 +160,7 @@ echo "----> Restoring Subsurface tree state"
 [[ ! -z $PREV_GIT ]] && echo "------> Restoring git branch to - $PREV_GIT -" && \
 	git checkout "$PREV_GIT" >/dev/null
 echo "------> Restoring cmake cache" && \
-	mv -f "$SSRF_PATH/build/CMakeCache.txt.bak" "$SSRF_PATH/build/CMakeCache.txt"
+	[[ $_TRAVIS == "false" ]] && mv -f "$SSRF_PATH/build/CMakeCache.txt.bak" "$SSRF_PATH/build/CMakeCache.txt"
 cmake .
 echo "----> Restored. Rebuild subsurface if needed"
 
