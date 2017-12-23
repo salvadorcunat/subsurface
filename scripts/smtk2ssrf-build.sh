@@ -39,7 +39,7 @@ function aborting() {
 	exit 1
 }
 
-if [ -z "$TRAVIS" || "$TRAVIS" != "true" ]; then
+if [ -z "$TRAVIS" ] || [ "$TRAVIS" != "true" ]; then
 	printf "
 	*****  WARNING  *****
 	Please, note that this script will render your Subsurface binary unusable.
