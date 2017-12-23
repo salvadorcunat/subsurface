@@ -49,6 +49,7 @@ before_install:
 
 script:
         #    - source ${TRAVIS_BUILD_DIR}/scripts/${SUBSURFACE_PLATFORM}/travisbuild.sh
+    - source ${TRAVIS_BUILD_DIR}/scripts/${SUBSURFACE_PLATFORM}/smtk2ssrf-travisbuild.sh
 
 after_success:
         #    - source ${TRAVIS_BUILD_DIR}/scripts/${SUBSURFACE_PLATFORM}/after_success.sh
