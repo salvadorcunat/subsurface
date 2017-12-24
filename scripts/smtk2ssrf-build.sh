@@ -140,7 +140,7 @@ if [ ! -z "$STATUS" ] && [ "$STATUS" -eq 1 ]; then
 	aborting "Couldn't checkout $SSRF_TAG. Is it correct?"
 fi
 
-cmake   -DBTSUPPORT=OFF \
+cmake	-DBTSUPPORT=OFF \
 	-DCMAKE_BUILD_TYPE="$RELEASE" \
 	-DFBSUPPORT=OFF \
 	-DFORCE_LIBSSH=OFF \
@@ -152,6 +152,7 @@ cmake   -DBTSUPPORT=OFF \
 	-DUSE_WEBENGINE=OFF \
 	-DSUBSURFACE_TARGET_EXECUTABLE=DesktopExecutable \
 	build
+
 cd build || aborting "Couldn't cd into $SSRF_PATH/build directory"
 make clean
 make "$JOBS" || STATUS=1
@@ -176,13 +177,21 @@ cd "$SSRF_PATH"/smtk-import || aborting "Couldnt cd into $SSRF_PATH/smtk-import"
 mkdir -p build
 cd build || aborting "Couldn't cd into $SSRF_PATH/smtk-import/build"
 
-cmake  -DCMAKE_BUILD_TYPE="$RELEASE" \
-       -DCOMMANDLINE=${CLI:-OFF} \
-       .. || aborting "Cmake incomplete"
+_CMAKE_OPTS=( "-DCMAKE_BUILD_TYPE=$RELEASE" "-DCOMMANDLINE=${CLI:-OFF}" )
 
-make "$JOBS" || aborting "Failed to build smtk2ssrf"
+# set $INSTALL_ROOT as path for automatic builds
+[[ $AUTOMATIC = "true" ]] && _CMAKE_OPTS+=( "-DCMAKE_INSTALL_PREFIX=$INSTALL_ROOT" )
 
-printf "
->> Building smtk2ssrf completed <<
->> Executable placed in  %s/smtk-import/build <<
->> To install system-wide, move there and run sudo make install <<\n" "$SSRF_PATH"
+cmake "${_CMAKE_OPTS[@]}" .. || aborting "Cmake incomplete"
+make clean
+LIBRARY_PATH=$INSTALL_ROOT/lib make "$JOBS" || aborting "Failed to build smtk2ssrf"
+
+# Install on automatic builds
+if [[ $AUTOMATIC = "true" ]]; then
+	LIBRARY_PATH=$INSTALL_ROOT/lib make install
+else
+	printf "
+	>> Building smtk2ssrf completed
+	>> Executable placed in  %s/smtk-import/build
+	>> To install system-wide, move there and run sudo make install\n" "${SSRF_PATH##$BASEDIR\/}"
+fi
