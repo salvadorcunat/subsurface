@@ -2,6 +2,12 @@
 
 matrix:
   include:
+    - env: SUBSURFACE_PLATFORM='windows'
+      os: linux
+      dist: trusty
+      sudo: required
+      language: c++
+
     - env: SUBSURFACE_PLATFORM='linux'
       os: linux
       dist: trusty
@@ -58,5 +64,6 @@ branches:
   except:
     - # Do not build tags that we create when we upload to GitHub Releases
     - /^(?i:continuous)/
+    - master
   only:
     - smtk-travis
