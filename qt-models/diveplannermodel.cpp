@@ -404,9 +404,7 @@ int DivePlannerPointsModel::rowCount(const QModelIndex &parent) const
 
 DivePlannerPointsModel::DivePlannerPointsModel(QObject *parent) : QAbstractTableModel(parent),
 	mode(NOTHING),
-	recalc(false),
-	tempGFHigh(100),
-	tempGFLow(100)
+	recalc(false)
 {
 	memset(&diveplan, 0, sizeof(diveplan));
 	startTime.setTimeSpec(Qt::UTC);
@@ -455,25 +453,18 @@ void DivePlannerPointsModel::setProblemSolvingTime(int minutes)
 
 void DivePlannerPointsModel::setGFHigh(const int gfhigh)
 {
-	tempGFHigh = gfhigh;
-	// GFHigh <= 34 can cause infinite deco at 6m - don't trigger a recalculation
-	// for smaller GFHigh unless the user explicitly leaves the field
-	if (tempGFHigh > 34)
-		triggerGFHigh();
-}
-
-void DivePlannerPointsModel::triggerGFHigh()
-{
-	if (diveplan.gfhigh != tempGFHigh) {
-		diveplan.gfhigh = tempGFHigh;
+	if (diveplan.gfhigh != gfhigh) {
+		diveplan.gfhigh = gfhigh;
 		emitDataChanged();
 	}
 }
 
-void DivePlannerPointsModel::setGFLow(const int ghflow)
+void DivePlannerPointsModel::setGFLow(const int gflow)
 {
-	tempGFLow = ghflow;
-	triggerGFLow();
+	if (diveplan.gflow != gflow) {
+		diveplan.gflow = gflow;
+		emitDataChanged();
+	}
 }
 
 void DivePlannerPointsModel::setRebreatherMode(int mode)
@@ -483,14 +474,6 @@ void DivePlannerPointsModel::setRebreatherMode(int mode)
 	for (i=0; i < rowCount(); i++)
 		divepoints[i].setpoint = mode == CCR ? prefs.defaultsetpoint : 0;
 	emitDataChanged();
-}
-
-void DivePlannerPointsModel::triggerGFLow()
-{
-	if (diveplan.gflow != tempGFLow) {
-		diveplan.gflow = tempGFLow;
-		emitDataChanged();
-	}
 }
 
 void DivePlannerPointsModel::setVpmbConservatism(int level)
@@ -600,14 +583,14 @@ void DivePlannerPointsModel::setDecoMode(int mode)
 	auto planner = SettingsObjectWrapper::instance()->planner_settings;
 	planner->setDecoMode(deco_mode(mode));
 	emit recreationChanged(mode == int(prefs.planner_deco_mode));
-	emit dataChanged(createIndex(0, 0), createIndex(rowCount() - 1, COLUMNS -1));
+	emitDataChanged();
 }
 
 void DivePlannerPointsModel::setSafetyStop(bool value)
 {
 	auto planner = SettingsObjectWrapper::instance()->planner_settings;
 	planner->setSafetyStop(value);
-	emit dataChanged(createIndex(0, 0), createIndex(rowCount() - 1, COLUMNS -1));
+	emitDataChanged();
 }
 
 void DivePlannerPointsModel::setReserveGas(int reserve)
