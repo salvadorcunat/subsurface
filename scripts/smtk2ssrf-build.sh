@@ -6,6 +6,7 @@
 #		-t (--tag) A git valid tag, commit, etc in subsurface tree
 #		-j (--jobs) Desired build parallelism, integer.
 #		-b (--build) Cmake build type, valid values Debug or Release
+#		-y Assume "yes" in prompt. Useful in automated builds.
 # Examples:
 #     $	./subsurface/scripts/build-smtk2ssrf.sh
 #	No flags, will build a Release version, with -j4 parallelism in the
@@ -31,6 +32,7 @@ RELEASE=Release
 BASEDIR="$(pwd)"
 INSTALL_ROOT="$BASEDIR"/install-root
 SSRF_PATH="$BASEDIR"/subsurface
+AUTOMATIC="${TRAVIS:-false}"
 
 # Display an error message if we need to bail out
 #
@@ -39,7 +41,25 @@ function aborting() {
 	exit 1
 }
 
-if [ -z "$TRAVIS" ] || [ "$TRAVIS" != "true" ]; then
+# check for arguments and set options if any
+#
+while [ $# -gt 0 ]; do
+	case $1 in
+		-c|--cli)	CLI="ON"
+				;;
+		-t|--tag)	SSRF_TAG="$2"
+				shift;;
+		-j|--jobs)	JOBS=-j"$2"
+				shift;;
+		-b|--build)	RELEASE="$2"
+				shift;;
+		-y)		AUTOMATIC="true"
+				;;
+	esac
+	shift
+done
+
+if [ "$AUTOMATIC" != "true" ]; then
 	printf "
 	*****  WARNING  *****
 	Please, note that this script will render your Subsurface binary unusable.
@@ -54,22 +74,6 @@ else
 fi
 
 [[ $_proceed != "y" && $_proceed != "Y" ]] && exit 0
-
-# check for arguments and set options if any
-#
-while [ $# -gt 0 ]; do
-	case $1 in
-		-c|--cli)	CLI="ON"
-				;;
-		-t|--tag)	SSRF_TAG="$2"
-				shift;;
-		-j|--jobs)	JOBS=-j"$2"
-				shift;;
-		-b|--build)	RELEASE="$2"
-				shift;;
-	esac
-	shift
-done
 
 echo ">> Building smtk2ssrf <<"
 
