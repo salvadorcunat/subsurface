@@ -78,3 +78,9 @@ fi
 echo "Get mdbtools"
 cd ${TRAVIS_BUILD_DIR}/..
 git clone https://github.com/brianb/mdbtools.git
+
+# get static mxe libraries for mdbtools
+wget -q https://www.dropbox.com/s/842skyusb96ii1u/mxe-static-minimal-994ad473.tar.xz?dl=0
+cd mxe
+tar -xJf ../mxe-static-minimal-994ad473.tar.xz
+ls -al
