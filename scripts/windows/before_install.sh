@@ -84,4 +84,4 @@ wget https://www.dropbox.com/s/842skyusb96ii1u/mxe-static-minimal-994ad473.tar.x
 [[ ! -f mxe-static-minimal-994ad473.tar.xz ]] && exit 1
 cd mxe
 tar -xJf ../mxe-static-minimal-994ad473.tar.xz
-ls -al
+ls -al usr/
