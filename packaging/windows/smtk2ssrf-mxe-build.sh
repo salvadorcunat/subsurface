@@ -205,7 +205,8 @@ cd "$BUILDDIR"/smtk-import
 mkdir -p staging
 
 echo -e "$BLUE---> Building CMakeCache.txt$DEFAULT"
-cmake	-DCMAKE_TOOLCHAIN_FILE="$BASEDIR"/mxe/usr/i686-w64-mingw32.shared/share/cmake/mxe-conf.cmake \
+i686-w64-mingw32.shared-cmake \
+	-DCMAKE_TOOLCHAIN_FILE="$BASEDIR"/mxe/usr/i686-w64-mingw32.shared/share/cmake/mxe-conf.cmake \
 	-DPKG_CONFIG_EXECUTABLE="/usr/bin/pkg-config" \
 	-DCMAKE_PREFIX_PATH="$BASEDIR"/mxe/usr/i686-w64-mingw32.shared/qt5 \
 	-DCMAKE_BUILD_TYPE=$RELEASE \
