@@ -127,29 +127,25 @@ export PKG_CONFIG_PATH="$PKG_CONFIG_PATH_i686_w64_mingw32_static":"$PKG_CONFIG_P
 #
 # mdbtools
 #
-if [ ! -f "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib/libmdb.a ]; then
-	echo -e "$BLUE---> Building mdbtools ... $DEFAULT "
-	mkdir -p --verbose "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/include
-	mkdir -p --verbose "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib
-	cd "$BUILDDIR"
-	[[ -d mdbtools ]] && rm -rf mdbtools
-	mkdir -p mdbtools
-	cd mdbtools
-	if [ ! -f "$BASEDIR"/mdbtools/configure ] ; then
-		( cd "$BASEDIR"/mdbtools
-		autoreconf -v -f -i )
-	fi
-	"$BASEDIR"/mdbtools/configure  --host=i686-w64-mingw32.static \
-			     --srcdir="$BASEDIR"/mdbtools \
-			     --prefix="$BASEDIR"/mxe/usr/i686-w64-mingw32.static \
-			     --enable-shared \
-			     --disable-man \
-			     --disable-gmdb2
-	make $JOBS >/dev/null || aborting "Building mdbtools failed."
-	make install
-else
-	echo -e "$BLUE---> Prebuilt mxe mdbtools ... $DEFAULT"
+echo -e "$BLUE---> Building mdbtools ... $DEFAULT "
+mkdir -p --verbose "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/include
+mkdir -p --verbose "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib
+cd "$BUILDDIR"
+[[ -d mdbtools ]] && rm -rf mdbtools
+mkdir -p mdbtools
+cd mdbtools
+if [ ! -f "$BASEDIR"/mdbtools/configure ] ; then
+	( cd "$BASEDIR"/mdbtools
+	autoreconf -v -f -i )
 fi
+"$BASEDIR"/mdbtools/configure  --host=i686-w64-mingw32.static \
+		     --srcdir="$BASEDIR"/mdbtools \
+		     --prefix="$BASEDIR"/mxe/usr/i686-w64-mingw32.static \
+		     --enable-shared \
+		     --disable-man \
+		     --disable-gmdb2
+make $JOBS >/dev/null || aborting "Building mdbtools failed."
+make install
 
 # Subsurface
 #
