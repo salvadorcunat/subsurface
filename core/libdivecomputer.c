@@ -115,7 +115,7 @@ static int parse_gasmixes(device_data_t *devdata, struct dive *dive, dc_parser_t
 #endif
 	bool no_volume = true;
 
-	for (i = 0; i < ngases || i < ntanks; i++) {
+	for (i = 0; i < MAX_CYLINDERS && (i < ngases || i < ntanks); i++) {
 		if (i < ngases) {
 			dc_gasmix_t gasmix = { 0 };
 			int o2, he;
@@ -124,10 +124,7 @@ static int parse_gasmixes(device_data_t *devdata, struct dive *dive, dc_parser_t
 			if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED)
 				return rc;
 
-			if (i >= MAX_CYLINDERS)
-				continue;
-
-			 o2 = lrint(gasmix.oxygen * 1000);
+			o2 = lrint(gasmix.oxygen * 1000);
 			he = lrint(gasmix.helium * 1000);
 
 			/* Ignore bogus data - libdivecomputer does some crazy stuff */
@@ -807,6 +804,7 @@ static int dive_cb(const unsigned char *data, unsigned int size,
 	if (!devdata->force_download && find_dive(&dive->dc)) {
 		const char *date_string = get_dive_date_c_string(dive->when);
 		dev_info(devdata, translate("gettextFromC", "Already downloaded dive at %s"), date_string);
+		free((void *)date_string);
 		goto error_exit;
 	}
 

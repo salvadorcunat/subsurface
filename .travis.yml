@@ -44,6 +44,7 @@ matrix:
             # For SmartTrak import
             - libglib2.0-dev
             - mdbtools-dev
+      filter_secrets: false
 # TODO: caching
 #      cache:
 #          timeout: 300

@@ -162,14 +162,14 @@ void RenumberDialog::buttonClicked(QAbstractButton *button)
 	if (ui.buttonBox->buttonRole(button) == QDialogButtonBox::AcceptRole) {
 		MainWindow::instance()->dive_list()->rememberSelection();
 		// we remember a map from dive uuid to a pair of old number / new number
-		QMap<int,QPair<int, int> > renumberedDives;
+		QMap<int, QPair<int, int>> renumberedDives;
 		int i;
 		int newNr = ui.spinBox->value();
 		struct dive *dive = NULL;
 		for_each_dive (i, dive) {
 			if (!selectedOnly || dive->selected) {
 				invalidate_dive_cache(dive);
-				renumberedDives.insert(dive->id, QPair<int,int>(dive->number, newNr++));
+				renumberedDives.insert(dive->id, QPair<int, int>(dive->number, newNr++));
 			}
 		}
 		UndoRenumberDives *undoCommand = new UndoRenumberDives(renumberedDives);
@@ -214,9 +214,8 @@ void SetpointDialog::buttonClicked(QAbstractButton *button)
 	MainWindow::instance()->graphics()->replot();
 }
 
-SetpointDialog::SetpointDialog(QWidget *parent) :
-	QDialog(parent),
-	dc(0)
+SetpointDialog::SetpointDialog(QWidget *parent) : QDialog(parent),
+	dc(0), time(0)
 {
 	ui.setupUi(this);
 	connect(ui.buttonBox, SIGNAL(clicked(QAbstractButton *)), this, SLOT(buttonClicked(QAbstractButton *)));
@@ -281,8 +280,7 @@ void ShiftTimesDialog::changeTime()
 	ui.shiftedTime->setText(get_dive_date_string(amount + when));
 }
 
-ShiftTimesDialog::ShiftTimesDialog(QWidget *parent) :
-	QDialog(parent),
+ShiftTimesDialog::ShiftTimesDialog(QWidget *parent) : QDialog(parent),
 	when(0)
 {
 	ui.setupUi(this);
@@ -346,8 +344,7 @@ bool ShiftImageTimesDialog::matchAll()
 	return matchAllImages;
 }
 
-ShiftImageTimesDialog::ShiftImageTimesDialog(QWidget *parent, QStringList fileNames) :
-	QDialog(parent),
+ShiftImageTimesDialog::ShiftImageTimesDialog(QWidget *parent, QStringList fileNames) : QDialog(parent),
 	fileNames(fileNames),
 	m_amount(0),
 	matchAllImages(false)
@@ -359,7 +356,7 @@ ShiftImageTimesDialog::ShiftImageTimesDialog(QWidget *parent, QStringList fileNa
 	connect(ui.backwards, SIGNAL(toggled(bool)), this, SLOT(timeEditChanged()));
 	connect(ui.matchAllImages, SIGNAL(toggled(bool)), this, SLOT(matchAllImagesToggled(bool)));
 	dcImageEpoch = (time_t)0;
-	
+
 	updateInvalid();
 }
 
@@ -409,7 +406,7 @@ void ShiftImageTimesDialog::updateInvalid()
 		allValid = false;
 	}
 
-	if (!allValid){
+	if (!allValid) {
 		ui.warningLabel->show();
 		ui.invalidFilesText->show();
 	}
@@ -419,15 +416,16 @@ void ShiftImageTimesDialog::timeEditChanged(const QTime &time)
 {
 	m_amount = time.hour() * 3600 + time.minute() * 60;
 	if (ui.backwards->isChecked())
-			m_amount *= -1;
+		m_amount *= -1;
 	updateInvalid();
 }
 
 void ShiftImageTimesDialog::timeEditChanged()
 {
 	if ((m_amount > 0) == ui.backwards->isChecked())
-			m_amount *= -1;
-	if (m_amount) updateInvalid();
+		m_amount *= -1;
+	if (m_amount)
+		updateInvalid();
 }
 
 URLDialog::URLDialog(QWidget *parent) : QDialog(parent)
@@ -500,109 +498,64 @@ void DiveComponentSelection::buttonClicked(QAbstractButton *button)
 	}
 }
 
-TagFilter::TagFilter(QWidget *parent) : QWidget(parent)
+void FilterBase::addContextMenuEntry(const QString &s, void (FilterModelBase::*fn)())
+{
+	QAction *act = new QAction(s, this);
+	connect(act, &QAction::triggered, model, fn);
+	ui.filterList->addAction(act);
+}
+
+FilterBase::FilterBase(FilterModelBase *model_, QWidget *parent) : QWidget(parent),
+	model(model_)
 {
 	ui.setupUi(this);
-	ui.label->setText(tr("Tags: "));
 #if QT_VERSION >= 0x050200
 	ui.filterInternalList->setClearButtonEnabled(true);
 #endif
 	QSortFilterProxyModel *filter = new QSortFilterProxyModel();
-	filter->setSourceModel(TagFilterModel::instance());
+	filter->setSourceModel(model);
 	filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
 	connect(ui.filterInternalList, SIGNAL(textChanged(QString)), filter, SLOT(setFilterFixedString(QString)));
+	connect(ui.notButton, &QToolButton::toggled, model, &FilterModelBase::setNegate);
 	ui.filterList->setModel(filter);
+
+	addContextMenuEntry(tr("Select All"), &FilterModelBase::selectAll);
+	addContextMenuEntry(tr("Unselect All"), &FilterModelBase::clearFilter);
+	addContextMenuEntry(tr("Invert Selection"), &FilterModelBase::invertSelection);
+	ui.filterList->setContextMenuPolicy(Qt::ActionsContextMenu);
 }
 
-void TagFilter::showEvent(QShowEvent *event)
+void FilterBase::showEvent(QShowEvent *event)
 {
-	MultiFilterSortModel::instance()->addFilterModel(TagFilterModel::instance());
+	MultiFilterSortModel::instance()->addFilterModel(model);
 	QWidget::showEvent(event);
 }
 
-void TagFilter::hideEvent(QHideEvent *event)
+void FilterBase::hideEvent(QHideEvent *event)
 {
-	MultiFilterSortModel::instance()->removeFilterModel(TagFilterModel::instance());
+	MultiFilterSortModel::instance()->removeFilterModel(model);
 	QWidget::hideEvent(event);
 }
 
-BuddyFilter::BuddyFilter(QWidget *parent) : QWidget(parent)
+TagFilter::TagFilter(QWidget *parent) : FilterBase(TagFilterModel::instance(), parent)
 {
-	ui.setupUi(this);
+	ui.label->setText(tr("Tags: "));
+}
+
+BuddyFilter::BuddyFilter(QWidget *parent) : FilterBase(BuddyFilterModel::instance(), parent)
+{
 	ui.label->setText(tr("Person: "));
 	ui.label->setToolTip(tr("Searches for buddies and divemasters"));
-#if QT_VERSION >= 0x050200
-	ui.filterInternalList->setClearButtonEnabled(true);
-#endif
-	QSortFilterProxyModel *filter = new QSortFilterProxyModel();
-	filter->setSourceModel(BuddyFilterModel::instance());
-	filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
-	connect(ui.filterInternalList, SIGNAL(textChanged(QString)), filter, SLOT(setFilterFixedString(QString)));
-	ui.filterList->setModel(filter);
 }
 
-void BuddyFilter::showEvent(QShowEvent *event)
+LocationFilter::LocationFilter(QWidget *parent) : FilterBase(LocationFilterModel::instance(), parent)
 {
-	MultiFilterSortModel::instance()->addFilterModel(BuddyFilterModel::instance());
-	QWidget::showEvent(event);
-}
-
-void BuddyFilter::hideEvent(QHideEvent *event)
-{
-	MultiFilterSortModel::instance()->removeFilterModel(BuddyFilterModel::instance());
-	QWidget::hideEvent(event);
-}
-
-LocationFilter::LocationFilter(QWidget *parent) : QWidget(parent)
-{
-	ui.setupUi(this);
 	ui.label->setText(tr("Location: "));
-#if QT_VERSION >= 0x050200
-	ui.filterInternalList->setClearButtonEnabled(true);
-#endif
-	QSortFilterProxyModel *filter = new QSortFilterProxyModel();
-	filter->setSourceModel(LocationFilterModel::instance());
-	filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
-	connect(ui.filterInternalList, SIGNAL(textChanged(QString)), filter, SLOT(setFilterFixedString(QString)));
-	ui.filterList->setModel(filter);
 }
 
-void LocationFilter::showEvent(QShowEvent *event)
+SuitFilter::SuitFilter(QWidget *parent) : FilterBase(SuitsFilterModel::instance(), parent)
 {
-	MultiFilterSortModel::instance()->addFilterModel(LocationFilterModel::instance());
-	QWidget::showEvent(event);
-}
-
-void LocationFilter::hideEvent(QHideEvent *event)
-{
-	MultiFilterSortModel::instance()->removeFilterModel(LocationFilterModel::instance());
-	QWidget::hideEvent(event);
-}
-
-SuitFilter::SuitFilter(QWidget *parent) : QWidget(parent)
-{
-	ui.setupUi(this);
 	ui.label->setText(tr("Suits: "));
-#if QT_VERSION >= 0x050200
-	ui.filterInternalList->setClearButtonEnabled(true);
-#endif
-	QSortFilterProxyModel *filter = new QSortFilterProxyModel();
-	filter->setSourceModel(SuitsFilterModel::instance());
-	filter->setFilterCaseSensitivity(Qt::CaseInsensitive);
-	connect(ui.filterInternalList, SIGNAL(textChanged(QString)), filter, SLOT(setFilterFixedString(QString)));
-	ui.filterList->setModel(filter);
-}
-
-void SuitFilter::showEvent(QShowEvent *event)
-{
-	MultiFilterSortModel::instance()->addFilterModel(SuitsFilterModel::instance());
-	QWidget::showEvent(event);
-}
-
-void SuitFilter::hideEvent(QHideEvent *event)
-{
-	MultiFilterSortModel::instance()->removeFilterModel(SuitsFilterModel::instance());
-	QWidget::hideEvent(event);
 }
 
 MultiFilter::MultiFilter(QWidget *parent) : QWidget(parent)
@@ -614,7 +567,7 @@ MultiFilter::MultiFilter(QWidget *parent) : QWidget(parent)
 
 	TagFilter *tagFilter = new TagFilter(this);
 	int minimumHeight = tagFilter->ui.filterInternalList->height() +
-			tagFilter->ui.verticalLayout->spacing() * tagFilter->ui.verticalLayout->count();
+			    tagFilter->ui.verticalLayout->spacing() * tagFilter->ui.verticalLayout->count();
 
 	QListView *dummyList = new QListView();
 	QStringListModel *dummy = new QStringListModel(QStringList() << "Dummy Text");
@@ -633,7 +586,7 @@ MultiFilter::MultiFilter(QWidget *parent) : QWidget(parent)
 	expandedWidget->setLayout(l);
 
 	ui.scrollArea->setWidget(expandedWidget);
-	expandedWidget->resize(expandedWidget->width(), minimumHeight + dummyList->sizeHintForRow(0) * 5 );
+	expandedWidget->resize(expandedWidget->width(), minimumHeight + dummyList->sizeHintForRow(0) * 5);
 	ui.scrollArea->setMinimumHeight(expandedWidget->height() + 5);
 
 	connect(MultiFilterSortModel::instance(), SIGNAL(filterFinished()), this, SLOT(filterFinished()));
@@ -789,7 +742,8 @@ QString TextHyperlinkEventFilter::fromCursorTilWhitespace(QTextCursor *cursor, c
 		}
 
 		grownText = cursor->selectedText();
-		if (grownText.size() == oldSize) movedOk = false;
+		if (grownText.size() == oldSize)
+			movedOk = false;
 		oldSize = grownText.size();
 		noSpaces = grownText.simplified().replace(" ", "");
 	} while (grownText == noSpaces && movedOk);

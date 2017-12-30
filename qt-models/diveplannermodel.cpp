@@ -412,8 +412,8 @@ DivePlannerPointsModel::DivePlannerPointsModel(QObject *parent) : QAbstractTable
 
 DivePlannerPointsModel *DivePlannerPointsModel::instance()
 {
-	static QScopedPointer<DivePlannerPointsModel> self(new DivePlannerPointsModel());
-	return self.data();
+	static DivePlannerPointsModel self;
+	return &self;
 }
 
 void DivePlannerPointsModel::emitDataChanged()
@@ -659,7 +659,7 @@ void DivePlannerPointsModel::setStartTime(const QTime &t)
 
 bool divePointsLessThan(const divedatapoint &p1, const divedatapoint &p2)
 {
-	return p1.time <= p2.time;
+	return p1.time < p2.time;
 }
 
 int DivePlannerPointsModel::lastEnteredPoint()
@@ -1019,7 +1019,7 @@ void DivePlannerPointsModel::computeVariations(struct diveplan *original_plan, s
 	if (in_planner() && prefs.display_variations && decoMode() != RECREATIONAL) {
 		int my_instance = ++instanceCounter;
 		cache_deco_state(&ds, &save);
-		
+
 		duration_t delta_time = { .seconds = 60 };
 		QString time_units = tr("min");
 		depth_t delta_depth;
@@ -1089,6 +1089,9 @@ void DivePlannerPointsModel::computeVariations(struct diveplan *original_plan, s
 finish:
 	free_dps(original_plan);
 	free(original_plan);
+	free(save);
+	free(cache);
+	free(dive);
 //	setRecalc(oldRecalc);
 }
 

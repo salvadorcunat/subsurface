@@ -57,30 +57,45 @@ void ostctools_import(const char *file, struct dive_table *divetable)
 
 	// Read dive number from the log
 	uc_tmp = calloc(2, 1);
-	fseek(archive, 258, 0);
+	if (fseek(archive, 258, 0) == -1) {
+		report_error(failed_to_read_msg, file);
+		free(uc_tmp);
+		free(ostcdive);
+		goto close_out;
+	}
 	if (fread(uc_tmp, 1, 2, archive) != 2) {
 		report_error(failed_to_read_msg, file);
 		free(uc_tmp);
 		free(ostcdive);
-		goto out;
+		goto close_out;
 	}
 	ostcdive->number = uc_tmp[0] + (uc_tmp[1] << 8);
 	free(uc_tmp);
 
 	// Read device's serial number
 	uc_tmp = calloc(2, 1);
-	fseek(archive, 265, 0);
+	if (fseek(archive, 265, 0) == -1) {
+		report_error(failed_to_read_msg, file);
+		free(uc_tmp);
+		free(ostcdive);
+		goto close_out;
+	}
 	if (fread(uc_tmp, 1, 2, archive) != 2) {
 		report_error(failed_to_read_msg, file);
 		free(uc_tmp);
 		free(ostcdive);
-		goto out;
+		goto close_out;
 	}
 	serial = uc_tmp[0] + (uc_tmp[1] << 8);
 	free(uc_tmp);
 
 	// Read dive's raw data, header + profile
-	fseek(archive, 456, 0);
+	if (fseek(archive, 456, 0) == -1) {
+		report_error(failed_to_read_msg, file);
+		free(uc_tmp);
+		free(ostcdive);
+		goto close_out;
+	}
 	while ((c = getc(archive)) != EOF) {
 		buffer[i] = c;
 		if (buffer[i] == 0xFD && buffer[i - 1] == 0xFD)
@@ -90,7 +105,7 @@ void ostctools_import(const char *file, struct dive_table *divetable)
 	if (ferror(archive)) {
 		report_error(failed_to_read_msg, file);
 		free(ostcdive);
-		goto out;
+		goto close_out;
 	}
 
 	// Try to determine the dc family based on the header type
@@ -108,8 +123,7 @@ void ostctools_import(const char *file, struct dive_table *divetable)
 		default:
 			report_error(translate("gettextFromC", "Unknown DC in dive %d"), ostcdive->number);
 			free(ostcdive);
-			fclose(archive);
-			goto out;
+			goto close_out;
 		}
 	}
 
@@ -140,8 +154,7 @@ void ostctools_import(const char *file, struct dive_table *divetable)
 	if (ret == 0) {
 		report_error(translate("gettextFromC", "Unknown DC in dive %d"), ostcdive->number);
 		free(ostcdive);
-		fclose(archive);
-		goto out;
+		goto close_out;
 	}
 	tmp = calloc(strlen(devdata->vendor) + strlen(devdata->model) + 28, 1);
 	sprintf(tmp, "%s %s (Imported from OSTCTools)", devdata->vendor, devdata->model);
@@ -175,6 +188,8 @@ void ostctools_import(const char *file, struct dive_table *divetable)
 	record_dive_to_table(ostcdive, divetable);
 	mark_divelist_changed(true);
 	sort_table(divetable);
+
+close_out:
 	fclose(archive);
 out:
 	free(devdata);

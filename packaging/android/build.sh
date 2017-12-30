@@ -345,6 +345,9 @@ else
 	git pull
 	popd
 fi
+# the Qt Android cmake addon runs androiddeployqt with '--verbose' which
+# is, err, rather verbose. Let's not do that.
+sed -i -e 's/--verbose//' qt-android-cmake/AddQtAndroidApk.cmake
 
 # Should we build the mobile ui or the desktop ui?
 # doing this backwards in order not to break people's setup
@@ -390,6 +393,7 @@ cmake $MOBILE_CMAKE \
 	-DLIBGIT2_FROM_PKGCONFIG=ON \
 	-DNO_PRINTING=ON \
 	-DNO_USERMANUAL=ON \
+	-DNO_DOCS=ON \
 	-DFBSUPPORT=OFF \
 	-DCMAKE_PREFIX_PATH:UNINITIALIZED="$QT5_ANDROID_CMAKE" \
 	-DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
@@ -398,6 +402,7 @@ cmake $MOBILE_CMAKE \
 	-DANDROID_NATIVE_LIBSSL="$BUILDROOT/ndk-$ARCH/sysroot/usr/lib/libssl.so" \
 	-DANDROID_NATIVE_LIBCRYPT="$BUILDROOT/ndk-$ARCH/sysroot/usr/lib/libcrypto.so" \
 	-DBUILDTOOLS_REVISION="$ANDROID_BUILDTOOLS_REVISION" \
+	-DCMAKE_MAKE_PROGRAM="make" \
 	"$SUBSURFACE_SOURCE"
 
 # set up the version number

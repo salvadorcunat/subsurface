@@ -615,7 +615,9 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 
 		if (!ismulti) {
 			snprintf(fl, 13, "ANS%d.TXT", filenr - 1);
-			ans_path = build_filename(build_filename(path, "ANS"), fl);
+			char *intermediate = build_filename(path, "ANS");
+			ans_path = build_filename(intermediate, fl);
+			free(intermediate);
 			ans_file = subsurface_open(ans_path, O_RDONLY, 0666);
 			free(ans_path);
 			size = bytes_available(ans_file);
@@ -882,7 +884,7 @@ static bool process_raw_buffer(device_data_t *devdata, uint32_t deviceid, char *
 #if UEMIS_DEBUG & 4
 			fprintf(debugfile, "Expect to find section %s\n", sections[nr_sections]);
 #endif
-			if (nr_sections < sizeof(sections) - 1)
+			if (nr_sections < sizeof(sections) / sizeof(*sections) - 1)
 				nr_sections++;
 			continue;
 		}
