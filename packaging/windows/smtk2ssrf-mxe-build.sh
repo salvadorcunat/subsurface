@@ -187,12 +187,12 @@ mkdir -p "$STAGING_DIR"/plugins
 
 for d in $QT_PLUGIN_DIRECTORIES
 do
-    cp -a "$d" "$STAGING_DIR"/plugins
+    [[ -d $d ]] && cp -a "$d" "$STAGING_DIR"/plugins
 done
 
 for f in $EXTRA_MANUAL_DEPENDENCIES
 do
-    cp "$f" "$STAGING_DIR"
+    [[ -f $f ]] && cp "$f" "$STAGING_DIR"
 done
 
 cd "$BUILDDIR"/smtk-import
