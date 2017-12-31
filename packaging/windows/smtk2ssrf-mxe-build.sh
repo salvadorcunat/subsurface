@@ -151,6 +151,7 @@ make install
 #
 cd "$BASEDIR/subsurface"
 git reset --hard master && echo -e "$BLUE---> Uncommited changes to Subsurface (if any) dropped$DEFAULT"
+git checkout master
 if [ ! -z "$GITREPO" ]; then
 	git pull --rebase "$GITREPO" master || aborting "git pull failed, Subsurface not updated"
 else
