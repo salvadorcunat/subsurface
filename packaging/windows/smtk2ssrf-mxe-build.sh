@@ -176,7 +176,7 @@ $BASEDIR/mxe/usr/i686-w64-mingw32.shared/qt5/plugins/platforms"
 
 # This comes from subsurface's mxe-based-build.sh. I'm not sure it is necessary
 # but, well, it doesn't hurt.
-#EXTRA_MANUAL_DEPENDENCIES="$BASEDIR/mxe/usr/i686-w64-mingw32.shared/qt5/bin/Qt5Xml$DLL_SUFFIX.dll"
+EXTRA_MANUAL_DEPENDENCIES="$BASEDIR/mxe/usr/i686-w64-mingw32.shared/qt5/bin/Qt5Xml$DLL_SUFFIX.dll"
 
 STAGING_DIR=$BUILDDIR/smtk-import/staging
 
