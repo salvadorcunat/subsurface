@@ -144,8 +144,7 @@ fi
 		     --enable-shared \
 		     --disable-man \
 		     --disable-gmdb2
-make $JOBS >/dev/null || aborting "Building mdbtools failed."
-make install
+make $JOBS >/dev/null && make install || echo -e "$RED---> Building mdbtools failed ...$LIGHT_GRAY Trying to build with precompiled mxe binaries$DEFAULT"
 
 # Subsurface
 #
