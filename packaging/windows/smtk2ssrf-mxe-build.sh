@@ -49,6 +49,7 @@ DEFAULT="\033[0m"
 
 SSRF_TAG=""
 RELEASE="Release"
+AUTOMATED="${TRAVIS:-false}"
 
 # this is important, if we are building in a VM or if we want to get a copy
 # of the installer elsewhere out of the building tree.
@@ -148,18 +149,20 @@ make $JOBS >/dev/null && make install || echo -e "$RED---> Building mdbtools fai
 
 # Subsurface
 #
-cd "$BASEDIR/subsurface"
-git reset --hard master && echo -e "$BLUE---> Uncommited changes to Subsurface (if any) dropped$DEFAULT"
-git checkout master
-if [ ! -z "$GITREPO" ]; then
-	git pull --rebase "$GITREPO" master || aborting "git pull failed, Subsurface not updated"
-else
-	git pull --rebase || aborting "git pull failed, Subsurface not updated"
-fi
-echo -e "$BLUE---> Subsurface updated$DEFAULT"
+if [ "$AUTOMATED" = "false" ]; then
+	cd "$BASEDIR/subsurface"
+	git reset --hard master && echo -e "$BLUE---> Uncommited changes to Subsurface (if any) dropped$DEFAULT"
+	git checkout master
+	if [ ! -z "$GITREPO" ]; then
+		git pull --rebase "$GITREPO" master || aborting "git pull failed, Subsurface not updated"
+	else
+		git pull --rebase || aborting "git pull failed, Subsurface not updated"
+	fi
+	echo -e "$BLUE---> Subsurface updated$DEFAULT"
 
-if [ "$SSRF_TAG" != "" ]; then
-	git checkout "$SSRF_TAG" || aborting "Failed to checkout Subsurface's $SSRF_TAG."
+	if [ "$SSRF_TAG" != "" ]; then
+		git checkout "$SSRF_TAG" || aborting "Failed to checkout Subsurface's $SSRF_TAG."
+	fi
 fi
 
 # Every thing is ok. Go on.
