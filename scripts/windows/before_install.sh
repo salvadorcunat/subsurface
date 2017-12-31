@@ -19,6 +19,7 @@ tar xJf ../mxe-994ad473.tar.xz
 # hack around path dependency - needs to be fixed
 sudo mkdir -p /data/winqt551/
 sudo ln -s ${TRAVIS_BUILD_DIR}/../mxe /data/winqt551/mxe-current
+sudo ln -s ${TRAVIS_BUILD_DIR}/../mxe /usr/src/boret/mxe
 ls -l /data/winqt551/mxe-current/usr
 
 # libdivecomputer uses the wrong include path for libusb
