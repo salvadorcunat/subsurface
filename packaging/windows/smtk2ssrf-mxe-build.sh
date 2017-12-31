@@ -192,11 +192,6 @@ do
     cp "$f" "$STAGING_DIR"
 done
 
-# this is absolutely hackish, but necessary. Libmdb (built or prebuilt) is linked against
-# shared glib-2.0, but once and again we are trying to link against static lib.
-mv -vf "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib/libglib-2.0.a "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib/libglib-2.0.a.bak || \
-	echo -e "$BLUE------> libglib-2.0.a had been moved in a previous run$DEFAULT"
-
 cd "$BUILDDIR"/smtk-import
 mkdir -p staging
 
@@ -216,10 +211,6 @@ if [ ! -z "$INSTALLER" ]; then
 else
 	make "$JOBS"
 fi
-
-# Undo previous hackery
-echo -e "$BLUE---> Restoring system to initial state$DEFAULT"
-mv -vf "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib/libglib-2.0.a.bak "$BASEDIR"/mxe/usr/i686-w64-mingw32.static/lib/libglib-2.0.a
 
 if [ ! -z "$DATADIR" ]; then
 	echo -e "$BLUE---> Copying Smtk2ssrf installer to data folder$DEFAULT"
