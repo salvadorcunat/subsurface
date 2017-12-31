@@ -79,9 +79,10 @@ echo "Get mdbtools"
 cd ${TRAVIS_BUILD_DIR}/..
 git clone https://github.com/brianb/mdbtools.git
 
-# get static mxe libraries for mdbtools
+# get prebuilt mxe libraries for mdbtools and glib.
+# do not overwrite upstream prebuilt mxe binaries if there is any coincidence.
 wget https://www.dropbox.com/s/842skyusb96ii1u/mxe-static-minimal-994ad473.tar.xz
 [[ ! -f mxe-static-minimal-994ad473.tar.xz ]] && exit 1
 cd mxe
-tar -xJf ../mxe-static-minimal-994ad473.tar.xz
+tar -xJf ../mxe-static-minimal-994ad473.tar.xz --skip-old-files
 ls -al usr/
