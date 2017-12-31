@@ -479,7 +479,7 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 	int timeout = UEMIS_LONG_TIMEOUT;
 
 	reqtxt_file = subsurface_open(reqtxt_path, O_RDWR | O_CREAT, 0666);
-	if (reqtxt_file == -1) {
+	if (reqtxt_file < 0) {
 		*error_text = "can't open req.txt";
 #ifdef UEMIS_DEBUG
 		fprintf(debugfile, "open %s failed with errno %d\n", reqtxt_path, errno);
@@ -529,6 +529,13 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 		snprintf(fl, 13, "ANS%d.TXT", filenr - 1);
 		ans_path = build_filename(build_filename(path, "ANS"), fl);
 		ans_file = subsurface_open(ans_path, O_RDONLY, 0666);
+		if (ans_file < 0) {
+			*error_text = "can't open Uemis response file";
+#ifdef UEMIS_DEBUG
+			fprintf(debugfile, "open %s failed with errno %d\n", ans_path, errno);
+#endif
+			return false;
+		}
 		read(ans_file, tmp, 100);
 		close(ans_file);
 #if UEMIS_DEBUG & 8
@@ -558,7 +565,7 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 					assembling_mbuf = false;
 				}
 				reqtxt_file = subsurface_open(reqtxt_path, O_RDWR | O_CREAT, 0666);
-				if (reqtxt_file == -1) {
+				if (reqtxt_file < 0) {
 					*error_text = "can't open req.txt";
 					fprintf(stderr, "open %s failed with errno %d\n", reqtxt_path, errno);
 					return false;
@@ -573,7 +580,7 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 				searching = false;
 			}
 			reqtxt_file = subsurface_open(reqtxt_path, O_RDWR | O_CREAT, 0666);
-			if (reqtxt_file == -1) {
+			if (reqtxt_file < 0) {
 				*error_text = "can't open req.txt";
 				fprintf(stderr, "open %s failed with errno %d\n", reqtxt_path, errno);
 				return false;
@@ -584,8 +591,17 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 		if (ismulti && more_files && tmp[0] == '1') {
 			int size;
 			snprintf(fl, 13, "ANS%d.TXT", assembling_mbuf ? filenr - 2 : filenr - 1);
-			ans_path = build_filename(build_filename(path, "ANS"), fl);
+			char *intermediate = build_filename(path, "ANS");
+			ans_path = build_filename(intermediate, fl);
+			free(intermediate);
 			ans_file = subsurface_open(ans_path, O_RDONLY, 0666);
+			if (ans_file < 0) {
+				*error_text = "can't open Uemis response file";
+#ifdef UEMIS_DEBUG
+				fprintf(debugfile, "open %s failed with errno %d\n", ans_path, errno);
+#endif
+				return false;
+			}
 			free(ans_path);
 			size = bytes_available(ans_file);
 			if (size > 3) {
@@ -619,6 +635,14 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 			ans_path = build_filename(intermediate, fl);
 			free(intermediate);
 			ans_file = subsurface_open(ans_path, O_RDONLY, 0666);
+			if (ans_file < 0) {
+				*error_text = "can't open Uemis response file";
+#ifdef UEMIS_DEBUG
+				fprintf(debugfile, "open %s failed with errno %d\n", ans_path, errno);
+#endif
+				return false;
+			}
+
 			free(ans_path);
 			size = bytes_available(ans_file);
 			if (size > 3) {
