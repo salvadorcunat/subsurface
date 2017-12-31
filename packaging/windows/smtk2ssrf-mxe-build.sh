@@ -142,6 +142,7 @@ fi
 "$BASEDIR"/mdbtools/configure  --host=i686-w64-mingw32.static \
 		     --srcdir="$BASEDIR"/mdbtools \
 		     --prefix="$BASEDIR"/mxe/usr/i686-w64-mingw32.static \
+		     --enable-shared=no \
 		     --disable-man \
 		     --disable-gmdb2
 make $JOBS >/dev/null && make install || echo -e "$RED---> Building mdbtools failed ...$LIGHT_GRAY Trying to build with precompiled mxe binaries$DEFAULT"
