@@ -139,7 +139,8 @@ if [ ! -f "$BASEDIR"/mdbtools/configure ] ; then
 	( cd "$BASEDIR"/mdbtools
 	autoreconf -v -f -i )
 fi
-"$BASEDIR"/mdbtools/configure  --host=i686-w64-mingw32.static \
+"$BASEDIR"/mdbtools/configure CC=i686-w64-mingw32.shared-gcc \
+		     --host=i686-w64-mingw32.static \
 		     --srcdir="$BASEDIR"/mdbtools \
 		     --prefix="$BASEDIR"/mxe/usr/i686-w64-mingw32.static \
 		     --enable-shared=no \
