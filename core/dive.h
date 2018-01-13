@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <time.h>
 #include <math.h>
 #include <zip.h>
@@ -27,17 +28,22 @@
 
 #define IS_FP_SAME(_a, _b) (fabs((_a) - (_b)) <= 0.000001 * MAX(fabs(_a), fabs(_b)))
 
-static inline int same_string(const char *a, const char *b)
+static inline bool same_string(const char *a, const char *b)
 {
 	return !strcmp(a ?: "", b ?: "");
 }
 
-static inline int same_string_caseinsensitive(const char *a, const char *b)
+static inline bool same_string_caseinsensitive(const char *a, const char *b)
 {
 	return !strcasecmp(a ?: "", b ?: "");
 }
 
-static inline int includes_string_caseinsensitive(const char *haystack, const char *needle)
+static inline bool empty_string(const char *s)
+{
+	return !s || !*s;
+}
+
+static inline bool includes_string_caseinsensitive(const char *haystack, const char *needle)
 {
 	if (!needle)
 		return 1; /* every string includes the NULL string */
@@ -66,8 +72,6 @@ static inline char *copy_string(const char *s)
 
 #ifdef __cplusplus
 extern "C" {
-#else
-#include <stdbool.h>
 #endif
 
 extern int last_xml_version;
@@ -265,7 +269,6 @@ void taglist_init_global();
 void taglist_free(struct tag_entry *tag_list);
 
 bool taglist_contains(struct tag_entry *tag_list, const char *tag);
-bool taglist_equal(struct tag_entry *tl1, struct tag_entry *tl2);
 int count_dives_with_tag(const char *tag);
 int count_dives_with_person(const char *person);
 int count_dives_with_location(const char *location);
@@ -525,7 +528,7 @@ static inline depth_t gas_mnd(struct gasmix *mix, depth_t end, struct dive *dive
 
 #define SURFACE_THRESHOLD 750 /* somewhat arbitrary: only below 75cm is it really diving */
 
-extern short autogroup;
+extern bool autogroup;
 /* random threashold: three days without diving -> new trip
  * this works very well for people who usually dive as part of a trip and don't
  * regularly dive at a local facility; this is why trips are an optional feature */
@@ -708,7 +711,6 @@ extern "C" {
 #endif
 
 extern int report_error(const char *fmt, ...);
-extern void report_message(const char *msg);
 extern const char *get_error_string(void);
 extern void set_error_cb(void(*cb)(void));
 
@@ -735,7 +737,6 @@ extern int parse_dlf_buffer(unsigned char *buffer, size_t size);
 extern int parse_file(const char *filename);
 extern int parse_csv_file(const char *filename, char **params, int pnr, const char *csvtemplate);
 extern int parse_seabear_log(const char *filename);
-extern int parse_seabear_csv_file(const char *filename, char **params, int pnr, const char *csvtemplate);
 extern int parse_txt_file(const char *filename, const char *csv);
 extern int parse_manual_file(const char *filename, char **params, int pnr);
 extern int save_dives(const char *filename);
@@ -768,7 +769,6 @@ extern void subsurface_console_init(void);
 extern void subsurface_console_exit(void);
 extern bool subsurface_user_is_root(void);
 
-extern void shift_times(const timestamp_t amount);
 extern timestamp_t get_times();
 
 extern xsltStylesheetPtr get_stylesheet(const char *name);
@@ -790,8 +790,6 @@ extern struct sample *prepare_sample(struct divecomputer *dc);
 extern void finish_sample(struct divecomputer *dc);
 extern void add_sample_pressure(struct sample *sample, int sensor, int mbar);
 extern int legacy_format_o2pressures(struct dive *dive, struct divecomputer *dc);
-
-extern bool has_hr_data(struct divecomputer *dc);
 
 extern void sort_table(struct dive_table *table);
 extern struct dive *fixup_dive(struct dive *dive);
@@ -846,7 +844,6 @@ extern int total_weight(struct dive *);
 #define DIVE_ERROR_PARSE 1
 #define DIVE_ERROR_PLAN 2
 
-const char *weekday(int wday);
 const char *monthname(int mon);
 
 #define UTF8_DEGREE "\xc2\xb0"
@@ -988,7 +985,6 @@ extern bool cylinder_nodata(const cylinder_t *cyl);
 extern bool cylinder_none(void *_data);
 extern bool weightsystem_none(void *_data);
 extern bool no_weightsystems(weightsystem_t *ws);
-extern bool weightsystems_equal(weightsystem_t *ws1, weightsystem_t *ws2);
 extern void remove_cylinder(struct dive *dive, int idx);
 extern void remove_weightsystem(struct dive *dive, int idx);
 extern void reset_cylinders(struct dive *dive, bool track_gas);
@@ -1025,8 +1021,6 @@ extern pressure_t string_to_pressure(const char *str);
 extern volume_t string_to_volume(const char *str, pressure_t workp);
 extern fraction_t string_to_fraction(const char *str);
 extern void average_max_depth(struct diveplan *dive, int *avg_depth, int *max_depth);
-
-extern struct dive_table downloadTable;
 
 #include "pref.h"
 

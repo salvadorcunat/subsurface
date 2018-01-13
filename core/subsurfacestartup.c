@@ -81,7 +81,6 @@ struct preferences default_prefs = {
 		.access_token = NULL
 	},
 	.defaultsetpoint = 1100,
-	.cloud_background_sync = true,
 	.geocoding = {
 		.category = { 0 }
 	},
@@ -124,15 +123,6 @@ void sort_table(struct dive_table *table)
 	qsort(table->dives, table->nr, sizeof(struct dive *), sortfn);
 }
 
-const char *weekday(int wday)
-{
-	static const char wday_array[7][7] = {
-		/*++GETTEXT: these are three letter days - we allow up to six code bytes */
-		QT_TRANSLATE_NOOP("gettextFromC", "Sun"), QT_TRANSLATE_NOOP("gettextFromC", "Mon"), QT_TRANSLATE_NOOP("gettextFromC", "Tue"), QT_TRANSLATE_NOOP("gettextFromC", "Wed"), QT_TRANSLATE_NOOP("gettextFromC", "Thu"), QT_TRANSLATE_NOOP("gettextFromC", "Fri"), QT_TRANSLATE_NOOP("gettextFromC", "Sat")
-	};
-	return translate("gettextFromC", wday_array[wday]);
-}
-
 const char *monthname(int mon)
 {
 	static const char month_array[12][7] = {
@@ -169,7 +159,7 @@ void print_files()
 	const char *filename, *local_git;
 
 	printf("\nFile locations:\n\n");
-	if (!same_string(prefs.cloud_storage_email, "") && !same_string(prefs.cloud_storage_password, "")) {
+	if (!empty_string(prefs.cloud_storage_email) && !empty_string(prefs.cloud_storage_password)) {
 		filename = cloud_url();
 
 		is_git_repository(filename, &branch, &remote, true);

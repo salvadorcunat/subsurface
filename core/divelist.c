@@ -47,9 +47,9 @@
 #include "qthelperfromc.h"
 #include "git-access.h"
 
-static short dive_list_changed = false;
+static bool dive_list_changed = false;
 
-short autogroup = false;
+bool autogroup = false;
 
 dive_trip_t *dive_trip_list;
 
@@ -93,16 +93,6 @@ dive_trip_t *find_trip_by_idx(int idx)
 		trip = trip->next;
 	}
 	return NULL;
-}
-
-int trip_has_selected_dives(dive_trip_t *trip)
-{
-	struct dive *dive;
-	for (dive = trip->dives; dive; dive = dive->next) {
-		if (dive->selected)
-			return 1;
-	}
-	return 0;
 }
 
 /*
@@ -1187,11 +1177,11 @@ void filter_dive(struct dive *d, bool shown)
  * (or the second one if the first one is empty */
 void combine_trips(struct dive_trip *trip_a, struct dive_trip *trip_b)
 {
-	if (same_string(trip_a->location, "") && trip_b->location) {
+	if (empty_string(trip_a->location) && trip_b->location) {
 		free(trip_a->location);
 		trip_a->location = strdup(trip_b->location);
 	}
-	if (same_string(trip_a->notes, "") && trip_b->notes) {
+	if (empty_string(trip_a->notes) && trip_b->notes) {
 		free(trip_a->notes);
 		trip_a->notes = strdup(trip_b->notes);
 	}
@@ -1201,8 +1191,10 @@ void combine_trips(struct dive_trip *trip_a, struct dive_trip *trip_b)
 		add_dive_to_trip(trip_b->dives, trip_a);
 }
 
-void mark_divelist_changed(int changed)
+void mark_divelist_changed(bool changed)
 {
+	if (dive_list_changed == changed)
+		return;
 	dive_list_changed = changed;
 	updateWindowTitle();
 }
@@ -1423,9 +1415,6 @@ void clear_dive_file_data()
 
 	clear_dive(&displayed_dive);
 	clear_dive_site(&displayed_dive_site);
-
-	free((void *)existing_filename);
-	existing_filename = NULL;
 
 	reset_min_datafile_version();
 	saved_git_id = "";

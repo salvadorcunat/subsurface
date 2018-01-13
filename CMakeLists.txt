@@ -286,6 +286,8 @@ if(${SUBSURFACE_TARGET_EXECUTABLE} MATCHES "MobileExecutable")
 		mobile-widgets/qml/kirigami/src/kirigamiplugin.cpp
 		mobile-widgets/qml/kirigami/src/settings.cpp
 		mobile-widgets/qml/kirigami/src/enums.cpp
+                mobile-widgets/qml/kirigami/src/formlayoutattached.cpp
+                mobile-widgets/qml/kirigami/src/mnemonicattached.cpp
 		mobile-widgets/qml/kirigami/src/libkirigami/basictheme.cpp
 		mobile-widgets/qml/kirigami/src/libkirigami/kirigamipluginfactory.cpp
 		mobile-widgets/qml/kirigami/src/libkirigami/platformtheme.cpp
@@ -308,7 +310,7 @@ if(${SUBSURFACE_TARGET_EXECUTABLE} MATCHES "MobileExecutable")
 	target_link_libraries(
 		${SUBSURFACE_TARGET}
 		subsurface_profile
-		subsurface_models
+		subsurface_models_mobile
 		subsurface_corelib
 		${SUBSURFACE_LINK_LIBRARIES}
 	)
@@ -335,7 +337,7 @@ elseif(${SUBSURFACE_TARGET_EXECUTABLE} MATCHES "DesktopExecutable")
 		${FACEBOOK_INTEGRATION}
 		subsurface_profile
 		subsurface_statistics
-		subsurface_models
+		subsurface_models_desktop
 		subsurface_corelib
 		${SUBSURFACE_LINK_LIBRARIES}
 	)
@@ -343,7 +345,7 @@ elseif(${SUBSURFACE_TARGET_EXECUTABLE} MATCHES "DesktopExecutable")
 	add_dependencies(subsurface_statistics subsurface_generated_ui)
 	add_dependencies(subsurface_interface subsurface_generated_ui)
 	add_dependencies(subsurface_profile subsurface_generated_ui)
-	add_dependencies(subsurface_models subsurface_generated_ui)
+	add_dependencies(subsurface_models_desktop subsurface_generated_ui)
 	add_dependencies(subsurface_generated_ui version)
 endif()
 

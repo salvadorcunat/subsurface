@@ -31,12 +31,12 @@ void subsurface_user_info(struct user_info *user)
 	const char *username = getenv("USER");
 
 	if (pwd) {
-		if (pwd->pw_gecos && *pwd->pw_gecos)
+		if (!empty_string(pwd->pw_gecos))
 			user->name = pwd->pw_gecos;
 		if (!username)
 			username = pwd->pw_name;
 	}
-	if (username && *username) {
+	if (!empty_string(username)) {
 		char hostname[64];
 		struct membuffer mb = {};
 		gethostname(hostname, sizeof(hostname));
@@ -81,7 +81,7 @@ const char *system_default_filename(void)
 	static const char *path = NULL;
 	if (!path) {
 		const char *user = getenv("LOGNAME");
-		if (same_string(user, ""))
+		if (empty_string(user))
 			user = "username";
 		char *filename = calloc(strlen(user) + 5, 1);
 		strcat(filename, user);

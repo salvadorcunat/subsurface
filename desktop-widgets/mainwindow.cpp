@@ -102,7 +102,7 @@ extern "C" void showErrorFromC()
 void MainWindow::showErrors()
 {
 	const char *error = get_error_string();
-	if (error && error[0])
+	if (!empty_string(error))
 		getNotificationWidget()->showNotification(error, KMessageWidget::Error);
 }
 
@@ -111,7 +111,8 @@ MainWindow::MainWindow() : QMainWindow(),
 	actionPreviousDive(0),
 	helpView(0),
 	state(VIEWALL),
-	survey(0)
+	survey(0),
+	locationProvider(new GpsLocation(nullptr, this))
 {
 	Q_ASSERT_X(m_Instance == NULL, "MainWindow", "MainWindow recreated!");
 	m_Instance = this;
@@ -440,7 +441,6 @@ void MainWindow::enableDisableCloudActions()
 {
 	ui.actionCloudstorageopen->setEnabled(prefs.cloud_verification_status == CS_VERIFIED);
 	ui.actionCloudstoragesave->setEnabled(prefs.cloud_verification_status == CS_VERIFIED);
-	ui.actionTake_cloud_storage_online->setEnabled(prefs.cloud_verification_status == CS_VERIFIED && prefs.git_local_only);
 }
 
 PlannerDetails *MainWindow::plannerDetails() const {
@@ -475,6 +475,7 @@ void MainWindow::refreshDisplay(bool doRecreateDiveList)
 	dive_list()->setEnabled(true);
 	dive_list()->setFocus();
 	WSInfoModel::instance()->updateInfo();
+	ui.actionAutoGroup->setChecked(autogroup);
 	if (amount_selected == 0)
 		cleanUpEmpty();
 }
@@ -608,14 +609,11 @@ void MainWindow::on_actionCloudstorageopen_triggered()
 
 	showProgressBar();
 	QByteArray fileNamePtr = QFile::encodeName(filename);
-	if (!parse_file(fileNamePtr.data())) {
-		set_filename(fileNamePtr.data());
-		setTitle();
-	}
+	if (!parse_file(fileNamePtr.data()))
+		setCurrentFile(fileNamePtr.data());
 	process_dives(false, false);
 	hideProgressBar();
 	refreshDisplay();
-	ui.actionAutoGroup->setChecked(autogroup);
 }
 
 void MainWindow::on_actionCloudstoragesave_triggered()
@@ -639,15 +637,48 @@ void MainWindow::on_actionCloudstoragesave_triggered()
 	if (error)
 		return;
 
-	set_filename(filename.toUtf8().data());
-	setTitle();
+	setCurrentFile(filename.toUtf8().data());
 	mark_divelist_changed(false);
 }
 
-void MainWindow::on_actionTake_cloud_storage_online_triggered()
+void MainWindow::on_actionCloudOnline_triggered()
 {
-	prefs.git_local_only = false;
-	ui.actionTake_cloud_storage_online->setEnabled(false);
+	bool isOffline = !ui.actionCloudOnline->isChecked();
+	if (isOffline == prefs.git_local_only)
+		return;
+
+	// Refuse to go online if there is an edit in progress
+	if (!isOffline &&
+	    (DivePlannerPointsModel::instance()->currentMode() != DivePlannerPointsModel::NOTHING ||
+	    information()->isEditing())) {
+		QMessageBox::warning(this, tr("Warning"), tr("Please save or cancel the current dive edit before going online"));
+		// We didn't switch to online, therefore uncheck the checkbox
+		ui.actionCloudOnline->setChecked(false);
+		return;
+	}
+
+	prefs.git_local_only = isOffline;
+	if (!isOffline) {
+		// User requests to go online. Try to sync cloud storage
+		if (unsaved_changes()) {
+			// If there are unsaved changes, ask the user if they want to save them.
+			// If they don't, they have to sync manually.
+			if (QMessageBox::warning(this, tr("Save changes?"),
+						 tr("You have unsaved changes. Do you want to commit them to the cloud storage?\n"
+						    "If answering no, the cloud will only be synced on next call to "
+						    "\"Open cloud storage\" or \"Save to cloud storage\"."),
+						 QMessageBox::Yes|QMessageBox::No) == QMessageBox::Yes)
+				on_actionCloudstoragesave_triggered();
+		} else {
+			// If there are no unsaved changes, let's just try to load the remote cloud
+			on_actionCloudstorageopen_triggered();
+		}
+		if (prefs.git_local_only)
+			report_error(qPrintable(tr("Failure taking cloud storage online")));
+	}
+
+	setTitle();
+	updateCloudOnlineStatus();
 }
 
 void learnImageDirs(QStringList dirnames)
@@ -714,12 +745,28 @@ void MainWindow::closeCurrentFile()
 	/* free the dives and trips */
 	clear_git_id();
 	clear_dive_file_data();
+	setCurrentFile(NULL);
 	cleanUpEmpty();
 	mark_divelist_changed(false);
 
 	clear_events();
 
 	dcList.dcMap.clear();
+}
+
+void MainWindow::updateCloudOnlineStatus()
+{
+	bool is_cloud = existing_filename && prefs.cloud_git_url && prefs.cloud_verification_status == CS_VERIFIED &&
+			strstr(existing_filename, prefs.cloud_git_url);
+	ui.actionCloudOnline->setEnabled(is_cloud);
+	ui.actionCloudOnline->setChecked(is_cloud && !prefs.git_local_only);
+}
+
+void MainWindow::setCurrentFile(const char *f)
+{
+	set_filename(f);
+	setTitle();
+	updateCloudOnlineStatus();
 }
 
 void MainWindow::on_actionClose_triggered()
@@ -826,7 +873,6 @@ void MainWindow::on_actionDownloadDC_triggered()
 void MainWindow::on_actionDownloadWeb_triggered()
 {
 	SubsurfaceWebServices dlg(this);
-
 	dlg.exec();
 }
 
@@ -1085,7 +1131,7 @@ void MainWindow::on_actionRenumber_triggered()
 
 void MainWindow::on_actionAutoGroup_triggered()
 {
-	autogroup = ui.actionAutoGroup->isChecked();
+	set_autogroup(ui.actionAutoGroup->isChecked());
 	if (autogroup)
 		autogroup_dives();
 	else
@@ -1115,52 +1161,51 @@ void MainWindow::on_actionYearlyStatistics_triggered()
 	d.exec();
 }
 
-#define BEHAVIOR QList<int>()
-
-#define TOGGLE_COLLAPSABLE( X ) \
-	ui.mainSplitter->setCollapsible(0, X); \
-	ui.mainSplitter->setCollapsible(1, X); \
-	ui.topSplitter->setCollapsible(0, X); \
-	ui.topSplitter->setCollapsible(1, X); \
-	ui.bottomSplitter->setCollapsible(0, X); \
-	ui.bottomSplitter->setCollapsible(1, X);
+void MainWindow::toggleCollapsible(bool toggle)
+{
+	ui.mainSplitter->setCollapsible(0, toggle);
+	ui.mainSplitter->setCollapsible(1, toggle);
+	ui.topSplitter->setCollapsible(0, toggle);
+	ui.topSplitter->setCollapsible(1, toggle);
+	ui.bottomSplitter->setCollapsible(0, toggle);
+	ui.bottomSplitter->setCollapsible(1, toggle);
+}
 
 void MainWindow::on_actionViewList_triggered()
 {
-	TOGGLE_COLLAPSABLE( true );
+	toggleCollapsible(true);
 	beginChangeState(LIST_MAXIMIZED);
-	ui.mainSplitter->setSizes(BEHAVIOR << COLLAPSED << EXPANDED);
-	ui.bottomSplitter->setSizes(BEHAVIOR << EXPANDED << COLLAPSED);
+	ui.mainSplitter->setSizes({ COLLAPSED, EXPANDED });
+	ui.bottomSplitter->setSizes({ EXPANDED, COLLAPSED });
 }
 
 void MainWindow::on_actionViewProfile_triggered()
 {
-	TOGGLE_COLLAPSABLE( true );
+	toggleCollapsible(true);
 	beginChangeState(PROFILE_MAXIMIZED);
-	ui.topSplitter->setSizes(BEHAVIOR << COLLAPSED << EXPANDED);
-	ui.mainSplitter->setSizes(BEHAVIOR << EXPANDED << COLLAPSED);
+	ui.topSplitter->setSizes({ COLLAPSED, EXPANDED });
+	ui.mainSplitter->setSizes({ EXPANDED, COLLAPSED });
 }
 
 void MainWindow::on_actionViewInfo_triggered()
 {
-	TOGGLE_COLLAPSABLE( true );
+	toggleCollapsible(true);
 	beginChangeState(INFO_MAXIMIZED);
-	ui.topSplitter->setSizes(BEHAVIOR << EXPANDED << COLLAPSED);
-	ui.mainSplitter->setSizes(BEHAVIOR << EXPANDED << COLLAPSED);
+	ui.topSplitter->setSizes({ EXPANDED, COLLAPSED });
+	ui.mainSplitter->setSizes({ EXPANDED, COLLAPSED });
 }
 
 void MainWindow::on_actionViewMap_triggered()
 {
-	TOGGLE_COLLAPSABLE( true );
+	toggleCollapsible(true);
 	beginChangeState(MAP_MAXIMIZED);
-	ui.mainSplitter->setSizes(BEHAVIOR << COLLAPSED << EXPANDED);
-	ui.bottomSplitter->setSizes(BEHAVIOR << COLLAPSED << EXPANDED);
+	ui.mainSplitter->setSizes({ COLLAPSED, EXPANDED });
+	ui.bottomSplitter->setSizes({ COLLAPSED, EXPANDED });
 }
-#undef BEHAVIOR
 
 void MainWindow::on_actionViewAll_triggered()
 {
-	TOGGLE_COLLAPSABLE( false );
+	toggleCollapsible(false);
 	beginChangeState(VIEWALL);
 	static QList<int> mainSizes;
 	const int appH = qApp->desktop()->size().height();
@@ -1206,8 +1251,6 @@ void MainWindow::on_actionViewAll_triggered()
 	ui.bottomSplitter->setCollapsible(0,false);
 	ui.bottomSplitter->setCollapsible(1,false);
 }
-
-#undef TOGGLE_COLLAPSABLE
 
 void MainWindow::beginChangeState(CurrentState s)
 {
@@ -1626,7 +1669,7 @@ int MainWindow::file_save_as(void)
 	selection_dialog.setAcceptMode(QFileDialog::AcceptSave);
 	selection_dialog.setFileMode(QFileDialog::AnyFile);
 	selection_dialog.setDefaultSuffix("");
-	if (same_string(default_filename, "")) {
+	if (empty_string(default_filename)) {
 		QFileInfo defaultFile(system_default_filename());
 		selection_dialog.setDirectory(qPrintable(defaultFile.absolutePath()));
 	}
@@ -1652,8 +1695,7 @@ int MainWindow::file_save_as(void)
 	if (save_dives(filename.toUtf8().data()))
 		return -1;
 
-	set_filename(filename.toUtf8().data());
-	setTitle();
+	setCurrentFile(filename.toUtf8().data());
 	mark_divelist_changed(false);
 	addRecentFile(filename, true);
 	return 0;
@@ -1707,12 +1749,10 @@ QString MainWindow::displayedFilename(QString fullFilename)
 
 	if (fullFilename.contains(prefs.cloud_git_url)) {
 		QString email = fileName.left(fileName.indexOf('['));
-		if (prefs.git_local_only) {
-			ui.actionTake_cloud_storage_online->setEnabled(true);
+		if (prefs.git_local_only)
 			return tr("[local cache for] %1").arg(email);
-		} else {
+		else
 			return tr("[cloud storage for] %1").arg(email);
-		}
 	} else {
 		return fileName;
 	}
@@ -1726,7 +1766,7 @@ void MainWindow::setAutomaticTitle()
 
 void MainWindow::setTitle()
 {
-	if (!existing_filename || !existing_filename[0]) {
+	if (empty_string(existing_filename)) {
 		setWindowTitle("Subsurface");
 		return;
 	}
@@ -1792,9 +1832,8 @@ void MainWindow::loadFiles(const QStringList fileNames)
 	for (int i = 0; i < fileNames.size(); ++i) {
 		fileNamePtr = QFile::encodeName(fileNames.at(i));
 		if (!parse_file(fileNamePtr.data())) {
-			set_filename(fileNamePtr.data());
+			setCurrentFile(fileNamePtr.data());
 			addRecentFile(fileNamePtr, false);
-			setTitle();
 		}
 	}
 	hideProgressBar();
@@ -1802,7 +1841,6 @@ void MainWindow::loadFiles(const QStringList fileNames)
 	process_dives(false, false);
 
 	refreshDisplay();
-	ui.actionAutoGroup->setChecked(autogroup);
 
 	int min_datafile_version = get_min_datafile_version();
 	if (min_datafile_version >0 && min_datafile_version < DATAFORMAT_VERSION) {

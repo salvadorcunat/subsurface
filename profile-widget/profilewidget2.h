@@ -17,6 +17,7 @@
 #include "profile-widget/divelineitem.h"
 #include "profile-widget/diveprofileitem.h"
 #include "core/display.h"
+#include "core/color.h"
 
 class RulerItem2;
 struct dive;
@@ -71,12 +72,11 @@ public:
 	ProfileWidget2(QWidget *parent = 0);
 	void resetZoom();
 	void plotDive(struct dive *d = 0, bool force = false);
-	void setupItem(AbstractProfilePolygonItem *item, DiveCartesianAxis *hAxis, DiveCartesianAxis *vAxis, DivePlotDataModel *model, int vData, int hData, int zValue);
+	void setupItem(AbstractProfilePolygonItem *item, DiveCartesianAxis *vAxis, int vData, int hData, int zValue);
 	void setPrintMode(bool mode, bool grayscale = false);
 	bool getPrintMode();
 	bool isPointOutOfBoundaries(const QPointF &point) const;
 	bool isPlanner();
-	bool isAddOrPlanner();
 	double getFontPrintScale();
 	void setFontPrintScale(double scale);
 #ifndef SUBSURFACE_MOBILE
@@ -104,10 +104,10 @@ slots: // Necessary to call from QAction's signals.
 	void actionRequestedReplot(bool triggered);
 	void setEmptyState();
 	void setProfileState();
-	void plotPictures();
 	void setReplot(bool state);
 	void replot(dive *d = 0);
 #ifndef SUBSURFACE_MOBILE
+	void plotPictures();
 	void setPlanState();
 	void setAddState();
 	void changeGas();
@@ -138,7 +138,6 @@ slots: // Necessary to call from QAction's signals.
 #endif
 
 protected:
-	virtual ~ProfileWidget2();
 	void resizeEvent(QResizeEvent *event) Q_DECL_OVERRIDE;
 #ifndef SUBSURFACE_MOBILE
 	void wheelEvent(QWheelEvent *event) Q_DECL_OVERRIDE;
@@ -162,7 +161,9 @@ private: /*methods*/
 	void setupItemOnScene();
 	void disconnectTemporaryConnections();
 	struct plot_data *getEntryFromPos(QPointF pos);
-
+	void addActionShortcut(const Qt::Key shortcut, void (ProfileWidget2::*slot)());
+	void createPPGas(PartialPressureGasItem *item, int verticalColumn, color_index_t color, color_index_t colorAlert,
+			 double *thresholdSettingsMin, double *thresholdSettingsMax);
 private:
 	DivePlotDataModel *dataModel;
 	int zoomLevel;

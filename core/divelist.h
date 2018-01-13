@@ -12,7 +12,7 @@ extern "C" {
 struct dive;
 
 extern void update_cylinder_related_info(struct dive *);
-extern void mark_divelist_changed(int);
+extern void mark_divelist_changed(bool);
 extern int unsaved_changes(void);
 extern void remove_autogen_trips(void);
 extern int init_decompression(struct deco_state *ds, struct dive *dive);
@@ -24,7 +24,6 @@ extern char *get_dive_gas_string(struct dive *dive);
 extern dive_trip_t *find_trip_by_idx(int idx);
 
 struct dive **grow_dive_table(struct dive_table *table);
-extern int trip_has_selected_dives(dive_trip_t *trip);
 extern void get_dive_gas(struct dive *dive, int *o2_p, int *he_p, int *o2low_p);
 extern int get_divenr(struct dive *dive);
 extern int get_divesite_idx(struct dive_site *ds);

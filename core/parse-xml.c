@@ -457,6 +457,11 @@ static void get_index(char *buffer, int *i)
 	*i = atoi(buffer);
 }
 
+static void get_bool(char *buffer, bool *i)
+{
+	*i = atoi(buffer);
+}
+
 static void get_uint8(char *buffer, uint8_t *i)
 {
 	*i = atoi(buffer);
@@ -610,10 +615,10 @@ static void eventtime(char *buffer, duration_t *duration)
 
 static void try_to_match_autogroup(const char *name, char *buf)
 {
-	int autogroupvalue;
+	bool autogroupvalue;
 
 	start_match("autogroup", name, buf);
-	if (MATCH("state.autogroup", get_index, &autogroupvalue)) {
+	if (MATCH("state.autogroup", get_bool, &autogroupvalue)) {
 		set_autogroup(autogroupvalue);
 		return;
 	}
@@ -894,7 +899,7 @@ static void try_to_fill_sample(struct sample *sample, const char *name, char *bu
 	nonmatch("sample", name, buf);
 }
 
-void try_to_fill_userid(const char *name, char *buf)
+static void try_to_fill_userid(const char *name, char *buf)
 {
 	(void) name;
 	if (prefs.save_userid_local)
@@ -1552,7 +1557,7 @@ static void reset_all(void)
  * but once we decode the HTML encoded characters they turn
  * into UTF-8 instead. So skip the incorrect encoding
  * declaration and decode the HTML encoded characters */
-const char *preprocess_divelog_de(const char *buffer)
+static const char *preprocess_divelog_de(const char *buffer)
 {
 	char *ret = strstr(buffer, "<DIVELOGSDATA>");
 
@@ -1604,16 +1609,6 @@ int parse_xml_buffer(const char *url, const char *buffer, int size,
 	xmlFreeDoc(doc);
 	return ret;
 }
-
-void parse_mkvi_buffer(struct membuffer *txt, struct membuffer *csv, const char *starttime)
-{
-	(void) csv;
-	(void) txt;
-	dive_start();
-	divedate(starttime, &cur_dive->when);
-	dive_end();
-}
-
 
 /*
  * Parse a unsigned 32-bit integer in little-endian mode,

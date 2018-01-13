@@ -23,16 +23,6 @@ QPen DiveCartesianAxis::gridPen()
 	return pen;
 }
 
-double DiveCartesianAxis::tickInterval() const
-{
-	return interval;
-}
-
-double DiveCartesianAxis::tickSize() const
-{
-	return tick_size;
-}
-
 void DiveCartesianAxis::setFontLabelScale(qreal scale)
 {
 	labelScale = scale;
@@ -147,7 +137,7 @@ void emptyList(QList<T *> &list, double steps)
 	}
 }
 
-void DiveCartesianAxis::updateTicks(color_indice_t color)
+void DiveCartesianAxis::updateTicks(color_index_t color)
 {
 	if (!scene() || (!changed && !profileWidget->getPrintMode()))
 		return;
@@ -334,14 +324,6 @@ qreal DiveCartesianAxis::posAtValue(qreal value)
 	return adjusted;
 }
 
-qreal DiveCartesianAxis::percentAt(const QPointF &p)
-{
-	qreal value = valueAt(p);
-	double size = max - min;
-	double percent = value / size;
-	return percent;
-}
-
 double DiveCartesianAxis::maximum() const
 {
 	return max;
@@ -416,7 +398,7 @@ QString TimeAxis::textForValue(double value)
 	return QString::number(nr);
 }
 
-void TimeAxis::updateTicks(color_indice_t color)
+void TimeAxis::updateTicks(color_index_t color)
 {
 	DiveCartesianAxis::updateTicks(color);
 	if (maximum() > 600) {

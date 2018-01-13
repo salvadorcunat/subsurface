@@ -103,7 +103,7 @@ slots:
 	void on_actionClose_triggered();
 	void on_actionCloudstorageopen_triggered();
 	void on_actionCloudstoragesave_triggered();
-	void on_actionTake_cloud_storage_online_triggered();
+	void on_actionCloudOnline_triggered();
 	void on_actionPrint_triggered();
 	void on_actionPreferences_triggered();
 	void on_actionQuit_triggered();
@@ -198,6 +198,8 @@ private:
 	bool askSaveChanges();
 	bool okToClose(QString message);
 	void closeCurrentFile();
+	void setCurrentFile(const char *f);
+	void updateCloudOnlineStatus();
 	void showProgressBar();
 	void hideProgressBar();
 	void writeSettings();
@@ -205,6 +207,7 @@ private:
 	int file_save_as();
 	void beginChangeState(CurrentState s);
 	void saveSplitterSizes();
+	void toggleCollapsible(bool toggle);
 	QString lastUsedDir();
 	void updateLastUsedDir(const QString &s);
 	void registerApplicationState(const QByteArray& state, QWidget *topLeft, QWidget *topRight, QWidget *bottomLeft, QWidget *bottomRight);

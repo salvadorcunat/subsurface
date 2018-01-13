@@ -424,21 +424,6 @@ double get_weight_units(unsigned int grams, int *frac, const char **units)
 	return value;
 }
 
-bool has_hr_data(struct divecomputer *dc)
-{
-	int i;
-	struct sample *sample;
-
-	if (!dc)
-		return false;
-
-	sample = dc->sample;
-	for (i = 0; i < dc->samples; i++)
-		if (sample[i].heartbeat)
-			return true;
-	return false;
-}
-
 struct dive *alloc_dive(void)
 {
 	struct dive *dive;
@@ -1205,7 +1190,7 @@ static struct event *find_previous_event(struct divecomputer *dc, struct event *
 	struct event *ev = dc->events;
 	struct event *previous = NULL;
 
-	if (same_string(event->name, ""))
+	if (empty_string(event->name))
 		return NULL;
 	while (ev && ev != event) {
 		if (same_string(ev->name, event->name))
@@ -2969,7 +2954,7 @@ void taglist_cleanup(struct tag_entry **tag_list)
 	struct tag_entry **tl = tag_list;
 	while (*tl) {
 		/* skip tags that are empty or that we have seen before */
-		if (same_string((*tl)->tag->name, "") || tag_seen_before(*tag_list, *tl)) {
+		if (empty_string((*tl)->tag->name) || tag_seen_before(*tag_list, *tl)) {
 			*tl = (*tl)->next;
 			continue;
 		}
@@ -3113,17 +3098,6 @@ bool taglist_contains(struct tag_entry *tag_list, const char *tag)
 	return false;
 }
 
-// check if all tags in subtl are included in supertl (so subtl is a subset of supertl)
-static bool taglist_contains_all(struct tag_entry *subtl, struct tag_entry *supertl)
-{
-	while (subtl) {
-		if (!taglist_contains(supertl, subtl->tag->name))
-			return false;
-		subtl = subtl->next;
-	}
-	return true;
-}
-
 struct tag_entry *taglist_added(struct tag_entry *original_list, struct tag_entry *new_list)
 {
 	struct tag_entry *added_list = NULL;
@@ -3147,12 +3121,6 @@ void dump_taglist(const char *intro, struct tag_entry *tl)
 	fprintf(stderr, "\n");
 }
 
-// if tl1 is both a subset and superset of tl2 they must be the same
-bool taglist_equal(struct tag_entry *tl1, struct tag_entry *tl2)
-{
-	return taglist_contains_all(tl1, tl2) && taglist_contains_all(tl2, tl1);
-}
-
 // count the dives where the tag list contains the given tag
 int count_dives_with_tag(const char *tag)
 {
@@ -3160,7 +3128,7 @@ int count_dives_with_tag(const char *tag)
 	struct dive *d;
 
 	for_each_dive (i, d) {
-		if (same_string(tag, "")) {
+		if (empty_string(tag)) {
 			// count dives with no tags
 			if (d->tag_list == NULL)
 				counter++;
@@ -3180,9 +3148,9 @@ int count_dives_with_person(const char *person)
 	struct dive *d;
 
 	for_each_dive (i, d) {
-		if (same_string(person, "")) {
+		if (empty_string(person)) {
 			// solo dive
-			if (same_string(d->buddy, "") && same_string(d->divemaster, ""))
+			if (empty_string(d->buddy) && empty_string(d->divemaster))
 				counter++;
 		} else if (string_sequence_contains(d->buddy, person) || string_sequence_contains(d->divemaster, person)) {
 			counter++;
@@ -3594,19 +3562,6 @@ struct dive *find_dive_n_near(timestamp_t when, int n, timestamp_t offset)
 				return dive;
 	}
 	return NULL;
-}
-
-void shift_times(const timestamp_t amount)
-{
-	int i;
-	struct dive *dive;
-
-	for_each_dive (i, dive) {
-		if (!dive->selected)
-			continue;
-		dive->when += amount;
-		invalidate_dive_cache(dive);
-	}
 }
 
 timestamp_t get_times()

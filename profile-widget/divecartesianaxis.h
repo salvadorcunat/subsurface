@@ -39,11 +39,8 @@ public:
 	void setFontLabelScale(qreal scale);
 	double minimum() const;
 	double maximum() const;
-	double tickInterval() const;
-	double tickSize() const;
 	double fontLabelScale() const;
 	qreal valueAt(const QPointF &p) const;
-	qreal percentAt(const QPointF &p);
 	qreal posAtValue(qreal value);
 	void setColor(const QColor &color);
 	void setTextColor(const QColor &color);
@@ -55,7 +52,7 @@ public:
 	int unitSystem;
 public
 slots:
-	virtual void updateTicks(color_indice_t color = TIME_GRID);
+	virtual void updateTicks(color_index_t color = TIME_GRID);
 
 signals:
 	void sizeChanged();
@@ -96,7 +93,7 @@ class TimeAxis : public DiveCartesianAxis {
 	Q_OBJECT
 public:
 	TimeAxis(ProfileWidget2 *widget);
-	void updateTicks(color_indice_t color = TIME_GRID);
+	void updateTicks(color_index_t color = TIME_GRID);
 
 protected:
 	QString textForValue(double value);

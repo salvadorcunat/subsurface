@@ -76,6 +76,7 @@ void DiveListModel::insertDive(int i, DiveObjectHelper *newDive)
 void DiveListModel::removeDive(int i)
 {
 	beginRemoveRows(QModelIndex(), i, i);
+	delete m_dives.at(i);
 	m_dives.removeAt(i);
 	endRemoveRows();
 }
@@ -105,6 +106,16 @@ void DiveListModel::clear()
 		m_dives.clear();
 		endRemoveRows();
 	}
+}
+
+void DiveListModel::resetInternalData()
+{
+	// this is a hack. There is a long standing issue, that seems related to a
+	// sync problem between QML engine and underlying model data. It causes delete
+	// from divelist (on mobile) to crash. But not always. This function is part of
+	// an attempt to fix this. See commit.
+	beginResetModel();
+	endResetModel();
 }
 
 int DiveListModel::rowCount(const QModelIndex &) const
