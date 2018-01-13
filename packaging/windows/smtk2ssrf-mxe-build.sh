@@ -5,16 +5,25 @@
 # the source tree and, please, refer to said script for instructions on how to
 # build.
 #
-# Subsurface *MUST* have been built before running that script, as the importer
+# Subsurface *MUST* have been built before running this script, as the importer
 # links against libsubsurface_corelib.a library.
 # Although is possible to build the latest git version of the importer against
 # whichever other version of subsurface, this should be avoided, and both
 # versions, subsurface and smtk-import should be the same.
 #
 # Flags and options:
+# -a (--auto):	    Mark the buils as "automatic". This assumes we are building
+#		    in a automated environment (e.g. travis-ci) and doesn't try
+#		    to change the git tag or repo. -t and -r flags are useless
+#		    if -a has been set. Building in travis-ci is detected and so
+#		    the flag is not necessary there.
 # -i (--installer): Packs a windows installer. This should always be used.
 # -t (--tag):       Defines which git version we want to build. Defaults to
 #                   latest. E.g. -t v4.6.4
+# -r (--repo):	    Set the repo you want to target for the build. If you are
+#                   working on a github fork, you will usually have an "origin"
+#		    and a "fork" repo, this enables choosing which repo you want
+#		    to pull from.
 # -b (--build):     Values: debug or release. Defines the build we want to do.
 # -d (--dir):	    Specify a directory where a copy of the installer will be
 #                   placed. This is a *must* if the script runs in a VM, and
@@ -22,13 +31,18 @@
 #
 # Examples: (provided Subsurface has been previously cross built)
 #
+# For most pourposes, including travis builds, just
+# smtk2ssrf-mxe-build.sh -i
+# should be used.
+#
 # smtk2ssrf-mxe-build.sh -i -t master
-# This will build an release installer of smtk2ssrf placed in a directory under
+# This will build a release installer of smtk2ssrf placed in a directory under
 # the win-build directory where it has been launched, named smtk-import. It will
 # build git latest master regardless of subsurface's cross built version.
 #
 # smtk2ssrf-mxe-build.sh -b debug
 # This will build *just* a windows binary (no packing) of the latest master.
+# Use with care, this flag *must* match subsurface's build one.
 #
 # smtk2ssrf-mxe-build.sh -i -t v4.6.4 -b relase -d /mnt/data
 # As I'm building in a fedora-25 docker VM, this should bring up a release
@@ -85,10 +99,12 @@ echo -e "$BLUE---> Building in$LIGHT_GRAY $BUILDDIR ...$DEFAULT"
 # check for arguments and set options
 if [ $# -eq 0 ]; then
 	echo -e "$BLUE---> No arguments given."
-	echo -e "---> Building actual git commit and Release type without installer $DEFAULT"
+	echo -e "---> Building current git commit and Release type without installer $DEFAULT"
 else
 	while [ $# -gt 0 ]; do
 		case $1 in
+			-a|--auto)	AUTOMATED="true"
+					;;
 			-t|--tag)	SSRF_TAG="$2"
 					shift;;
 			-i|--installer)	INSTALLER="installer"
@@ -102,7 +118,7 @@ else
 		esac
 		shift
 	done
-	echo -e "$BLUE---> Subsurface tagged to:$LIGHT_GRAY $SSRF_TAG"
+	echo -e "$BLUE---> Subsurface tagged to:$LIGHT_GRAY ${SSRF_TAG:-latest}"
 	echo -e "$BLUE---> Building type:$LIGHT_GRAY $RELEASE"
 	echo -e "$BLUE---> Installer set to:$LIGHT_GRAY $INSTALLER $DEFAULT"
 fi
