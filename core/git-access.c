@@ -187,6 +187,16 @@ static int reset_to_remote(git_repository *repo, git_reference *local, const git
 }
 
 static int auth_attempt = 0;
+static const int max_auth_attempts = 2;
+
+static bool exceeded_auth_attempts()
+{
+	if (auth_attempt++ > max_auth_attempts) {
+		report_error("Authentication to cloud storage failed.");
+		return true;
+	}
+	return false;
+}
 
 int credential_ssh_cb(git_cred **out,
 		  const char *url,
@@ -195,19 +205,36 @@ int credential_ssh_cb(git_cred **out,
 		  void *payload)
 {
 	(void) url;
-	(void) allowed_types;
 	(void) payload;
+	(void) username_from_url;
 
-	/* Bail out from libgit authentication loop when credentials are incorrect */
-	if (auth_attempt++ > 2) {
-		report_error("Authentication to cloud storage failed.");
-		return GIT_EUSER;
+	const char *username = prefs.cloud_storage_email_encoded;
+	const char *passphrase = prefs.cloud_storage_password ? prefs.cloud_storage_password : "";
+
+	// TODO: We need a way to differentiate between password and private key authentication
+	if (allowed_types & GIT_CREDTYPE_SSH_KEY) {
+		char *priv_key = format_string("%s/%s", system_default_directory(), "ssrf_remote.key");
+		if (!access(priv_key, F_OK)) {
+			if (exceeded_auth_attempts())
+				return GIT_EUSER;
+			int ret = git_cred_ssh_key_new(out, username, NULL, priv_key, passphrase);
+			free(priv_key);
+			return ret;
+		}
+		free(priv_key);
 	}
 
-	const char *priv_key = format_string("%s/%s", system_default_directory(), "ssrf_remote.key");
-	const char *passphrase = prefs.cloud_storage_password ? strdup(prefs.cloud_storage_password) : strdup("");
+	if (allowed_types & GIT_CREDTYPE_USERPASS_PLAINTEXT) {
+		if (exceeded_auth_attempts())
+			return GIT_EUSER;
+		return git_cred_userpass_plaintext_new(out, username, passphrase);
+	}
 
-	return git_cred_ssh_key_new(out, username_from_url, NULL, priv_key, passphrase);
+	if (allowed_types & GIT_CREDTYPE_USERNAME)
+		return git_cred_username_new(out, username);
+
+	report_error("No supported ssh authentication.");
+	return GIT_EUSER;
 }
 
 int credential_https_cb(git_cred **out,
@@ -221,14 +248,11 @@ int credential_https_cb(git_cred **out,
 	(void) payload;
 	(void) allowed_types;
 
-	/* Bail out from libgit authentication loop when credentials are incorrect */
-	if (auth_attempt++ > 2) {
-		report_error("Authentication to cloud storage failed.");
+	if (exceeded_auth_attempts())
 		return GIT_EUSER;
-	}
 
 	const char *username = prefs.cloud_storage_email_encoded;
-	const char *password = prefs.cloud_storage_password ? strdup(prefs.cloud_storage_password) : strdup("");
+	const char *password = prefs.cloud_storage_password ? prefs.cloud_storage_password : "";
 
 	return git_cred_userpass_plaintext_new(out, username, password);
 }
@@ -580,7 +604,7 @@ int sync_with_remote(git_repository *repo, const char *remote, const char *branc
 		return 0;
 	}
 
-	if (rt == RT_HTTPS && !canReachCloudServer()) {
+	if (is_subsurface_cloud && !canReachCloudServer()) {
 		// this is not an error, just a warning message, so return 0
 		report_error("Cannot connect to cloud server, working with local copy");
 		git_storage_update_progress(translate("gettextFromC", "Can't reach cloud server, working with local data"));
@@ -674,7 +698,6 @@ static git_repository *create_and_push_remote(const char *localdir, const char *
 {
 	git_repository *repo;
 	git_config *conf;
-	int len;
 	char *variable_name, *merge_head;
 
 	if (verbose)
@@ -692,18 +715,15 @@ static git_repository *create_and_push_remote(const char *localdir, const char *
 
 	/* create a config so we can set the remote tracking branch */
 	git_repository_config(&conf, repo);
-	len = sizeof("branch..remote") + strlen(branch);
-	variable_name = malloc(len);
-	snprintf(variable_name, len, "branch.%s.remote", branch);
+	variable_name = format_string("branch.%s.remote", branch);
 	git_config_set_string(conf, variable_name, "origin");
-	/* we know this is shorter than the previous one, so we reuse the variable*/
-	snprintf(variable_name, len, "branch.%s.merge", branch);
-	len = sizeof("refs/heads/") + strlen(branch);
-	merge_head = malloc(len);
-	snprintf(merge_head, len, "refs/heads/%s", branch);
-	git_config_set_string(conf, variable_name, merge_head);
 	free(variable_name);
+
+	variable_name = format_string("branch.%s.merge", branch);
+	merge_head = format_string("refs/heads/%s", branch);
+	git_config_set_string(conf, variable_name, merge_head);
 	free(merge_head);
+	free(variable_name);
 
 	/* finally create an empty commit and push it to the remote */
 	if (do_git_save(repo, branch, remote, false, true))
@@ -730,7 +750,7 @@ static git_repository *create_local_repo(const char *localdir, const char *remot
 	opts.fetch_opts.callbacks.certificate_check = certificate_check_cb;
 
 	opts.checkout_branch = branch;
-	if (rt == RT_HTTPS && !canReachCloudServer())
+	if (is_subsurface_cloud && !canReachCloudServer())
 		return 0;
 	if (verbose > 1)
 		fprintf(stderr, "git storage: calling git_clone()\n");
@@ -743,11 +763,9 @@ static git_repository *create_local_repo(const char *localdir, const char *remot
 			 msg = giterr_last()->message;
 			 fprintf(stderr, "error message was %s\n", msg);
 		}
-		int len = sizeof("reference 'refs/remotes/origin/' not found") + strlen(branch);
-		char *pattern = malloc(len);
+		char *pattern = format_string("reference 'refs/remotes/origin/%s' not found", branch);
 		// it seems that we sometimes get 'Reference' and sometimes 'reference'
-		snprintf(pattern, len, "reference 'refs/remotes/origin/%s' not found", branch);
-		if (strstr(remote, prefs.cloud_git_url) && includes_string_caseinsensitive(msg, pattern)) {
+		if (includes_string_caseinsensitive(msg, pattern)) {
 			/* we're trying to open the remote branch that corresponds
 			 * to our cloud storage and the branch doesn't exist.
 			 * So we need to create the branch and push it to the remote */
@@ -766,18 +784,21 @@ static git_repository *create_local_repo(const char *localdir, const char *remot
 	return cloned_repo;
 }
 
+enum remote_transport url_to_remote_transport(const char *remote)
+{
+	/* figure out the remote transport */
+	if (strncmp(remote, "ssh://", 6) == 0)
+		return RT_SSH;
+	else if (strncmp(remote, "https://", 8) == 0)
+		return RT_HTTPS;
+	else
+		return RT_OTHER;
+}
+
 static struct git_repository *get_remote_repo(const char *localdir, const char *remote, const char *branch)
 {
 	struct stat st;
-	enum remote_transport rt;
-
-	/* figure out the remote transport */
-	if (strncmp(remote, "ssh://", 6) == 0)
-		rt = RT_SSH;
-	else if (strncmp(remote, "https://", 8) == 0)
-		rt = RT_HTTPS;
-	else
-		rt = RT_OTHER;
+	enum remote_transport rt = url_to_remote_transport(remote);
 
 	if (verbose > 1) {
 		fprintf(stderr, "git_remote_repo: accessing %s\n", remote);
@@ -794,18 +815,16 @@ static struct git_repository *get_remote_repo(const char *localdir, const char *
 		}
 		return update_local_repo(localdir, remote, branch, rt);
 	} else {
-		/* we have no local cache yet */
-		if (is_subsurface_cloud) {
-			/* and take us temporarly online to create a local and
-			 * remote cloud repo.
-			 */
-			git_repository *ret;
-			bool glo = prefs.git_local_only;
-			prefs.git_local_only = false;
-			ret = create_local_repo(localdir, remote, branch, rt);
-			prefs.git_local_only = glo;
-			return ret;
-		}
+		/* We have no local cache yet.
+		 * Take us temporarly online to create a local and
+		 * remote cloud repo.
+		 */
+		git_repository *ret;
+		bool glo = prefs.git_local_only;
+		prefs.git_local_only = false;
+		ret = create_local_repo(localdir, remote, branch, rt);
+		prefs.git_local_only = glo;
+		return ret;
 	}
 
 	/* all normal cases are handled above */
@@ -825,7 +844,7 @@ static struct git_repository *get_remote_repo(const char *localdir, const char *
 static struct git_repository *is_remote_git_repository(char *remote, const char *branch)
 {
 	char c, *localdir;
-	const char *p = remote;
+	char *p = remote;
 
 	while ((c = *p++) >= 'a' && c <= 'z')
 		/* nothing */;
@@ -859,21 +878,19 @@ static struct git_repository *is_remote_git_repository(char *remote, const char 
 
 	/*
 	 * next we need to make sure that any encoded username
-	 * has been extracted from an https:// based URL
+	 * has been extracted from the URL
 	 */
-	if  (!strncmp(remote, "https://", 8)) {
-		char *at = strchr(remote, '@');
-		if (at) {
-			/* was this the @ that denotes an account? that means it was before the
-			 * first '/' after the https:// - so let's find a '/' after that and compare */
-			char *slash = strchr(remote + 8, '/');
-			if (slash && slash > at) {
-				/* grab the part between "https://" and "@" as encoded email address
-				 * (that's our username) and move the rest of the URL forward, remembering
-				 * to copy the closing NUL as well */
-				prefs.cloud_storage_email_encoded = strndup(remote + 8, at - remote - 8);
-				memmove(remote + 8, at + 1, strlen(at + 1) + 1);
-			}
+	char *at = strchr(remote, '@');
+	if (at) {
+		/* was this the @ that denotes an account? that means it was before the
+		 * first '/' after the protocol:// - so let's find a '/' after that and compare */
+		char *slash = strchr(p, '/');
+		if (slash && slash > at) {
+			/* grab the part between "protocol://" and "@" as encoded email address
+			 * (that's our username) and move the rest of the URL forward, remembering
+			 * to copy the closing NUL as well */
+			prefs.cloud_storage_email_encoded = strndup(p, at - p);
+			memmove(p, at + 1, strlen(at + 1) + 1);
 		}
 	}
 	localdir = get_local_dir(remote, branch);

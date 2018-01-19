@@ -115,6 +115,7 @@ QMLManager::QMLManager() : m_locationServiceEnabled(false),
 {
 	m_instance = this;
 	m_lastDevicePixelRatio = qApp->devicePixelRatio();
+	timer.start();
 	connect(qobject_cast<QApplication *>(QApplication::instance()), &QApplication::applicationStateChanged, this, &QMLManager::applicationStateChanged);
 
 	QString libdcLogFileName = QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation).first() + "/libdivecomputer.log";
@@ -160,8 +161,6 @@ QMLManager::QMLManager() : m_locationServiceEnabled(false),
 
 void QMLManager::applicationStateChanged(Qt::ApplicationState state)
 {
-	if (!timer.isValid())
-		timer.start();
 	QString stateText;
 	switch (state) {
 	case Qt::ApplicationActive: stateText = "active"; break;
@@ -182,7 +181,7 @@ void QMLManager::applicationStateChanged(Qt::ApplicationState state)
 		//       make sure the user sees that we are saving data if they come back
 		//       while this is running
 		saveChangesCloud(false);
-		appendTextToLog(QString::number(timer.elapsed() / 1000.0,'f', 3) + ": done saving to git local / remote");
+		appendTextToLog("done saving to git local / remote");
 	}
 }
 
@@ -208,11 +207,11 @@ void QMLManager::openLocalThenRemote(QString url)
 		 *    no cloud repo solves this.
 		 */
 
-		if (credentialStatus() != CS_NOCLOUD)
+		if (m_credentialStatus != CS_NOCLOUD)
 			setCredentialStatus(CS_NEED_TO_VERIFY);
 	} else {
 		// if we can load from the cache, we know that we have a valid cloud account
-		if (credentialStatus() == CS_UNKNOWN)
+		if (m_credentialStatus == CS_UNKNOWN)
 			setCredentialStatus(CS_VERIFIED);
 		prefs.unit_system = git_prefs.unit_system;
 		if (git_prefs.unit_system == IMPERIAL)
@@ -231,11 +230,11 @@ void QMLManager::openLocalThenRemote(QString url)
 		appendTextToLog(QStringLiteral("%1 dives loaded from cache").arg(dive_table.nr));
 		setNotificationText(tr("%1 dives loaded from local dive data file").arg(dive_table.nr));
 	}
-	if (credentialStatus() == CS_NEED_TO_VERIFY) {
+	if (m_credentialStatus == CS_NEED_TO_VERIFY) {
 		appendTextToLog(QStringLiteral("have cloud credentials, but still needs PIN"));
 		setShowPin(true);
 	}
-	if (oldStatus() == CS_NOCLOUD) {
+	if (m_oldStatus == CS_NOCLOUD) {
 		// if we switch to credentials from CS_NOCLOUD, we take things online temporarily
 		prefs.git_local_only = false;
 		appendTextToLog(QStringLiteral("taking things online to be able to switch to cloud account"));
@@ -284,9 +283,9 @@ void QMLManager::cancelCredentialsPinSetup()
 
 	setCredentialStatus(CS_UNKNOWN);
 	s.beginGroup("CloudStorage");
-	s.setValue("email", cloudUserName());
-	s.setValue("password", cloudPassword());
-	s.setValue("cloud_verification_status", credentialStatus());
+	s.setValue("email", m_cloudUserName);
+	s.setValue("password", m_cloudPassword);
+	s.setValue("cloud_verification_status", m_credentialStatus);
 	s.sync();
 	setStartPageText(tr("Starting..."));
 
@@ -302,14 +301,14 @@ void QMLManager::finishSetup()
 	setCredentialStatus((cloud_status_qml) prefs.cloud_verification_status);
 	// if the cloud credentials are valid, we should get the GPS Webservice ID as well
 	QString url;
-	if (!cloudUserName().isEmpty() &&
-	    !cloudPassword().isEmpty() &&
+	if (!m_cloudUserName.isEmpty() &&
+	    !m_cloudPassword.isEmpty() &&
 	    getCloudURL(url) == 0) {
 		// we know that we are the first ones to access git storage, so we don't need to test,
 		// but we need to make sure we stay the only ones accessing git storage
 		alreadySaving = true;
 		openLocalThenRemote(url);
-	} else if (!empty_string(existing_filename) && credentialStatus() != CS_UNKNOWN) {
+	} else if (!empty_string(existing_filename) && m_credentialStatus != CS_UNKNOWN) {
 		setCredentialStatus(CS_NOCLOUD);
 		saveCloudCredentials();
 		appendTextToLog(tr("working in no-cloud mode"));
@@ -350,8 +349,8 @@ QMLManager *QMLManager::instance()
 void QMLManager::savePreferences()
 {
 	auto location = SettingsObjectWrapper::instance()->location_settings;
-	location->setTimeThreshold(timeThreshold() * 60);
-	location->setDistanceThreshold(distanceThreshold());
+	location->setTimeThreshold(m_timeThreshold * 60);
+	location->setDistanceThreshold(m_distanceThreshold);
 }
 
 #define CLOUDURL QString(prefs.cloud_base_url)
@@ -363,44 +362,42 @@ void QMLManager::saveCloudCredentials()
 	bool cloudCredentialsChanged = false;
 	// make sure we only have letters, numbers, and +-_. in password and email address
 	QRegularExpression regExp("^[a-zA-Z0-9@.+_-]+$");
-	QString cloudPwd = cloudPassword();
-	QString cloudUser = cloudUserName();
-	if (credentialStatus() != CS_NOCLOUD) {
+	if (m_credentialStatus != CS_NOCLOUD) {
 		// in case of NO_CLOUD, the email address + passwd do not care, so do not check it.
-		if (cloudPwd.isEmpty() || !regExp.match(cloudPwd).hasMatch() || !regExp.match(cloudUser).hasMatch()) {
+		if (m_cloudPassword.isEmpty() || !regExp.match(m_cloudPassword).hasMatch() || !regExp.match(m_cloudUserName).hasMatch()) {
 			setStartPageText(RED_FONT + tr("Cloud storage email and password can only consist of letters, numbers, and '.', '-', '_', and '+'.") + END_FONT);
 			return;
 		}
 		// use the same simplistic regex as the backend to check email addresses
 		regExp = QRegularExpression("^[a-zA-Z0-9.+_-]+@[a-zA-Z0-9.+_-]+\\.[a-zA-Z0-9]+");
-		if (!regExp.match(cloudUser).hasMatch()) {
+		if (!regExp.match(m_cloudUserName).hasMatch()) {
 			setStartPageText(RED_FONT + tr("Invalid format for email address") + END_FONT);
 			return;
 		}
 	}
 	s.beginGroup("CloudStorage");
-	s.setValue("email", cloudUser);
-	s.setValue("password", cloudPwd);
-	s.setValue("cloud_verification_status", credentialStatus());
+	s.setValue("email", m_cloudUserName);
+	s.setValue("password", m_cloudPassword);
+	s.setValue("cloud_verification_status", m_credentialStatus);
 	s.sync();
-	if (!same_string(prefs.cloud_storage_email, qPrintable(cloudUser))) {
+	if (!same_string(prefs.cloud_storage_email, qPrintable(m_cloudUserName))) {
 		free((void *)prefs.cloud_storage_email);
-		prefs.cloud_storage_email = strdup(qPrintable(cloudUser));
+		prefs.cloud_storage_email = strdup(qPrintable(m_cloudUserName));
 		cloudCredentialsChanged = true;
 	}
 
-	cloudCredentialsChanged |= !same_string(prefs.cloud_storage_password, qPrintable(cloudPwd));
+	cloudCredentialsChanged |= !same_string(prefs.cloud_storage_password, qPrintable(m_cloudPassword));
 
-	if (credentialStatus() != CS_NOCLOUD && !cloudCredentialsChanged) {
+	if (m_credentialStatus != CS_NOCLOUD && !cloudCredentialsChanged) {
 		// just go back to the dive list
-		setCredentialStatus(oldStatus());
+		setCredentialStatus(m_oldStatus);
 	}
 
-	if (!same_string(prefs.cloud_storage_password, qPrintable(cloudPwd))) {
+	if (!same_string(prefs.cloud_storage_password, qPrintable(m_cloudPassword))) {
 		free((void *)prefs.cloud_storage_password);
-		prefs.cloud_storage_password = strdup(qPrintable(cloudPwd));
+		prefs.cloud_storage_password = strdup(qPrintable(m_cloudPassword));
 	}
-	if (cloudUser.isEmpty() || cloudPwd.isEmpty()) {
+	if (m_cloudUserName.isEmpty() || m_cloudPassword.isEmpty()) {
 		setStartPageText(RED_FONT + tr("Please enter valid cloud credentials.") + END_FONT);
 	} else if (cloudCredentialsChanged) {
 		// let's make sure there are no unsaved changes
@@ -423,7 +420,7 @@ void QMLManager::saveCloudCredentials()
 		currentGitLocalOnly = prefs.git_local_only;
 		prefs.git_local_only = false;
 		openLocalThenRemote(url);
-	} else if (prefs.cloud_verification_status == CS_NEED_TO_VERIFY && !cloudPin().isEmpty()) {
+	} else if (prefs.cloud_verification_status == CS_NEED_TO_VERIFY && !m_cloudPin.isEmpty()) {
 		// the user entered a PIN?
 		tryRetrieveDataFromBackend();
 	}
@@ -438,7 +435,7 @@ void QMLManager::checkCredentialsAndExecute(execute_function_type execute)
 		setStartPageText(tr("Testing cloud credentials"));
 		appendTextToLog("Have credentials, let's see if they are valid");
 		CloudStorageAuthenticate *csa = new CloudStorageAuthenticate(this);
-		csa->backend(prefs.cloud_storage_email, prefs.cloud_storage_password, cloudPin());
+		csa->backend(prefs.cloud_storage_email, prefs.cloud_storage_password, m_cloudPin);
 		// let's wait here for the signal to avoid too many more nested functions
 		QTimer myTimer;
 		myTimer.setSingleShot(true);
@@ -468,7 +465,7 @@ void QMLManager::checkCredentialsAndExecute(execute_function_type execute)
 			setShowPin(true);
 			return;
 		}
-		if (showPin())
+		if (m_showPin)
 			setShowPin(false);
 
 		// now check the redirect URL to make sure everything is set up on the cloud server
@@ -565,7 +562,7 @@ void QMLManager::retrieveUserid()
 void QMLManager::loadDivesWithValidCredentials()
 {
 	QString url;
-	timestamp_t currentDiveTimestamp = selectedDiveTimestamp();
+	timestamp_t currentDiveTimestamp = m_selectedDiveTimestamp;
 	if (getCloudURL(url)) {
 		QString errorString(get_error_string());
 		appendTextToLog(errorString);
@@ -612,7 +609,7 @@ successful_exit:
 	setLoadFromCloud(true);
 	// if we came from local storage mode, let's merge the local data into the local cache
 	// for the remote data - which then later gets merged with the remote data if necessary
-	if (oldStatus() == CS_NOCLOUD) {
+	if (m_oldStatus == CS_NOCLOUD) {
 		git_storage_update_progress(qPrintable(tr("Loading dives from local storage ('no cloud' mode)")));
 		dive_table.preexisting = dive_table.nr;
 		mergeLocalRepo();
@@ -620,9 +617,9 @@ successful_exit:
 		DiveListModel::instance()->addAllDives();
 		appendTextToLog(QStringLiteral("%1 dives loaded after importing nocloud local storage").arg(dive_table.nr));
 		saveChangesLocal();
-		if (syncToCloud() == false) {
+		if (m_syncToCloud == false) {
 			appendTextToLog(QStringLiteral("taking things back offline now that storage is synced"));
-			prefs.git_local_only = syncToCloud();
+			prefs.git_local_only = m_syncToCloud;
 		}
 	}
 	// if we got here just for an initial connection to the cloud, reset to offline
@@ -640,15 +637,15 @@ void QMLManager::revertToNoCloudIfNeeded()
 		currentGitLocalOnly = false;
 		prefs.git_local_only = true;
 	}
-	if (oldStatus() == CS_NOCLOUD) {
+	if (m_oldStatus == CS_NOCLOUD) {
 		// we tried to switch to a cloud account and had previously used local data,
 		// but connecting to the cloud account (and subsequently merging the local
 		// and cloud data) failed - so let's delete the cloud credentials and go
 		// back to CS_NOCLOUD mode in order to prevent us from losing the locally stored
 		// dives
-		if (syncToCloud() == false) {
+		if (m_syncToCloud == false) {
 			appendTextToLog(QStringLiteral("taking things back offline since sync with cloud failed"));
-			prefs.git_local_only = syncToCloud();
+			prefs.git_local_only = m_syncToCloud;
 		}
 		free((void *)prefs.cloud_storage_email);
 		prefs.cloud_storage_email = NULL;
@@ -1116,7 +1113,7 @@ void QMLManager::openNoCloudRepo()
 void QMLManager::saveChangesLocal()
 {
 	if (unsaved_changes()) {
-		if (credentialStatus() == CS_NOCLOUD) {
+		if (m_credentialStatus == CS_NOCLOUD) {
 			if (empty_string(existing_filename)) {
 				char *filename = NOCLOUD_LOCALSTORAGE;
 				if (git_create_local_repo(filename))
@@ -1126,7 +1123,7 @@ void QMLManager::saveChangesLocal()
 				s->setDefaultFilename(filename);
 				s->setDefaultFileBehavior(LOCAL_DEFAULT_FILE);
 			}
-		} else if (!loadFromCloud()) {
+		} else if (!m_loadFromCloud) {
 			// this seems silly, but you need a common ancestor in the repository in
 			// order to be able to merge che changes later
 			appendTextToLog("Don't save dives without loading from the cloud, first.");
@@ -1174,7 +1171,7 @@ void QMLManager::saveChangesCloud(bool forceRemoteSync)
 	if (prefs.git_local_only && !forceRemoteSync)
 		return;
 
-	if (!loadFromCloud()) {
+	if (!m_loadFromCloud) {
 		appendTextToLog("Don't save dives without loading from the cloud, first.");
 		return;
 	}
@@ -1327,14 +1324,7 @@ void QMLManager::setLogText(const QString &logText)
 
 void QMLManager::appendTextToLog(const QString &newText)
 {
-	if (!timer.isValid())
-		timer.start();
 	qDebug() << QString::number(timer.elapsed() / 1000.0,'f', 3) + ": " + newText;
-}
-
-bool QMLManager::locationServiceEnabled() const
-{
-	return m_locationServiceEnabled;
 }
 
 void QMLManager::setLocationServiceEnabled(bool locationServiceEnabled)
@@ -1342,11 +1332,6 @@ void QMLManager::setLocationServiceEnabled(bool locationServiceEnabled)
 	m_locationServiceEnabled = locationServiceEnabled;
 	locationProvider->serviceEnable(m_locationServiceEnabled);
 	emit locationServiceEnabledChanged();
-}
-
-bool QMLManager::locationServiceAvailable() const
-{
-	return m_locationServiceAvailable;
 }
 
 void QMLManager::setLocationServiceAvailable(bool locationServiceAvailable)
@@ -1361,11 +1346,6 @@ void QMLManager::hasLocationSourceChanged()
 	setLocationServiceAvailable(locationProvider->hasLocationsSource());
 }
 
-bool QMLManager::verboseEnabled() const
-{
-	return m_verboseEnabled;
-}
-
 void QMLManager::setVerboseEnabled(bool verboseMode)
 {
 	m_verboseEnabled = verboseMode;
@@ -1374,20 +1354,10 @@ void QMLManager::setVerboseEnabled(bool verboseMode)
 	emit verboseEnabledChanged();
 }
 
-QString QMLManager::cloudPassword() const
-{
-	return m_cloudPassword;
-}
-
 void QMLManager::setCloudPassword(const QString &cloudPassword)
 {
 	m_cloudPassword = cloudPassword;
 	emit cloudPasswordChanged();
-}
-
-QString QMLManager::cloudPin() const
-{
-	return m_cloudPin;
 }
 
 void QMLManager::setCloudPin(const QString &cloudPin)
@@ -1396,31 +1366,16 @@ void QMLManager::setCloudPin(const QString &cloudPin)
 	emit cloudPinChanged();
 }
 
-QString QMLManager::cloudUserName() const
-{
-	return m_cloudUserName;
-}
-
 void QMLManager::setCloudUserName(const QString &cloudUserName)
 {
 	m_cloudUserName = cloudUserName.toLower();
 	emit cloudUserNameChanged();
 }
 
-int QMLManager::distanceThreshold() const
-{
-	return m_distanceThreshold;
-}
-
 void QMLManager::setDistanceThreshold(int distance)
 {
 	m_distanceThreshold = distance;
 	emit distanceThresholdChanged();
-}
-
-int QMLManager::timeThreshold() const
-{
-	return m_timeThreshold;
 }
 
 void QMLManager::setTimeThreshold(int time)
@@ -1445,11 +1400,6 @@ QString QMLManager::theme() const
 	return s.value("currentTheme", "Blue").toString();
 }
 
-bool QMLManager::loadFromCloud() const
-{
-	return m_loadFromCloud;
-}
-
 void QMLManager::syncLoadFromCloud()
 {
 	QSettings s;
@@ -1466,20 +1416,10 @@ void QMLManager::setLoadFromCloud(bool done)
 	emit loadFromCloudChanged();
 }
 
-QString QMLManager::startPageText() const
-{
-	return m_startPageText;
-}
-
 void QMLManager::setStartPageText(const QString& text)
 {
 	m_startPageText = text;
 	emit startPageTextChanged();
-}
-
-QMLManager::cloud_status_qml QMLManager::credentialStatus() const
-{
-	return m_credentialStatus;
 }
 
 void QMLManager::setCredentialStatus(const cloud_status_qml value)
@@ -1494,11 +1434,6 @@ void QMLManager::setCredentialStatus(const cloud_status_qml value)
 		m_credentialStatus = value;
 		emit credentialStatusChanged();
 	}
-}
-
-QMLManager::cloud_status_qml QMLManager::oldStatus() const
-{
-	return m_oldStatus;
 }
 
 void QMLManager::setOldStatus(const cloud_status_qml value)
@@ -1550,20 +1485,10 @@ QString QMLManager::getGpsFromSiteName(const QString& siteName)
 	return "";
 }
 
-QString QMLManager::notificationText() const
-{
-	return m_notificationText;
-}
-
 void QMLManager::setNotificationText(QString text)
 {
 	m_notificationText = text;
 	emit notificationTextChanged();
-}
-
-bool QMLManager::syncToCloud() const
-{
-	return m_syncToCloud;
 }
 
 void QMLManager::setSyncToCloud(bool status)
@@ -1576,20 +1501,10 @@ void QMLManager::setSyncToCloud(bool status)
 	emit syncToCloudChanged();
 }
 
-int QMLManager::updateSelectedDive() const
-{
-	return m_updateSelectedDive;
-}
-
 void QMLManager::setUpdateSelectedDive(int idx)
 {
 	m_updateSelectedDive = idx;
 	emit updateSelectedDiveChanged();
-}
-
-int QMLManager::selectedDiveTimestamp() const
-{
-	return m_selectedDiveTimestamp;
 }
 
 void QMLManager::setSelectedDiveTimestamp(int when)
@@ -1691,31 +1606,16 @@ QStringList QMLManager::cylinderInit() const
 	return cylinders;
 }
 
-bool QMLManager::showPin() const
-{
-	return m_showPin;
-}
-
 void QMLManager::setShowPin(bool enable)
 {
 	m_showPin = enable;
 	emit showPinChanged();
 }
 
-QString QMLManager::progressMessage() const
-{
-	return m_progressMessage;
-}
-
 void QMLManager::setProgressMessage(QString text)
 {
 	m_progressMessage = text;
 	emit progressMessageChanged();
-}
-
-bool QMLManager::libdcLog() const
-{
-	return m_libdcLog;
 }
 
 void QMLManager::setLibdcLog(bool value)
@@ -1725,20 +1625,10 @@ void QMLManager::setLibdcLog(bool value)
 	emit libdcLogChanged();
 }
 
-bool QMLManager::developer() const
-{
-	return m_developer;
-}
-
 void QMLManager::setDeveloper(bool value)
 {
 	m_developer = value;
 	emit developerChanged();
-}
-
-bool QMLManager::btEnabled() const
-{
-	return m_btEnabled;
 }
 
 void QMLManager::setBtEnabled(bool value)
