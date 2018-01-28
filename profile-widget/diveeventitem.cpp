@@ -7,6 +7,7 @@
 #include "core/profile.h"
 #include "core/gettextfromc.h"
 #include "core/metrics.h"
+#include "core/membuffer.h"
 
 extern struct ev_select *ev_namelist;
 extern int evn_used;
@@ -49,19 +50,19 @@ struct event *DiveEventItem::getEvent()
 	return internalEvent;
 }
 
-void DiveEventItem::setEvent(struct event *ev)
+void DiveEventItem::setEvent(struct event *ev, struct gasmix *lastgasmix)
 {
 	if (!ev)
 		return;
 
 	free(internalEvent);
 	internalEvent = clone_event(ev);
-	setupPixmap();
-	setupToolTipString();
+	setupPixmap(lastgasmix);
+	setupToolTipString(lastgasmix);
 	recalculatePos(true);
 }
 
-void DiveEventItem::setupPixmap()
+void DiveEventItem::setupPixmap(struct gasmix *lastgasmix)
 {
 	const IconMetrics& metrics = defaultIconMetrics();
 #ifndef SUBSURFACE_MOBILE
@@ -86,14 +87,29 @@ void DiveEventItem::setupPixmap()
 		setPixmap(EVENT_PIXMAP(":dive-bookmark-icon"));
 	} else if (event_is_gaschange(internalEvent)) {
 		struct gasmix *mix = get_gasmix_from_event(&displayed_dive, internalEvent);
-		if (mix->he.permille)
-			setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-trimix-icon"));
-		else if (gasmix_is_air(mix))
-			setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-air-icon"));
-		else if (mix->o2.permille == 1000)
-			setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-oxygen-icon"));
-		else
-			setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-ean-icon"));
+		struct icd_data icd_data;
+		bool icd = isobaric_counterdiffusion(lastgasmix, mix, &icd_data);
+		if (mix->he.permille) {
+			if (icd)
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-trimix-ICD-icon"));
+			else
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-trimix-icon"));
+		} else if (gasmix_is_air(mix)) {
+			if (icd)
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-air-ICD-icon"));
+			else
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-air-icon"));
+		} else if (mix->o2.permille == 1000) {
+			if (icd)
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-oxygen-ICD-icon"));
+			else
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-oxygen-icon"));
+		} else {
+			if (icd)
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-ean-ICD-icon"));
+			else
+				setPixmap(EVENT_PIXMAP_BIGGER(":gaschange-ean-icon"));
+		}
 #ifdef SAMPLE_FLAGS_SEVERITY_SHIFT
 	} else if ((((internalEvent->flags & SAMPLE_FLAGS_SEVERITY_MASK) >> SAMPLE_FLAGS_SEVERITY_SHIFT) == 1) ||
 		    // those are useless internals of the dive computer
@@ -143,7 +159,7 @@ void DiveEventItem::setupPixmap()
 #undef EVENT_PIXMAP_BIGGER
 }
 
-void DiveEventItem::setupToolTipString()
+void DiveEventItem::setupToolTipString(struct gasmix *lastgasmix)
 {
 	// we display the event on screen - so translate
 	QString name = gettextFromC::instance()->tr(internalEvent->name);
@@ -151,13 +167,25 @@ void DiveEventItem::setupToolTipString()
 	int type = internalEvent->type;
 
 	if (event_is_gaschange(internalEvent)) {
+		struct icd_data icd_data;
 		struct gasmix *mix = get_gasmix_from_event(&displayed_dive, internalEvent);
+		struct membuffer mb = {};
 		name += ": ";
 		name += gasname(mix);
 
 		/* Do we have an explicit cylinder index?  Show it. */
 		if (internalEvent->gas.index >= 0)
 			name += tr(" (cyl. %1)").arg(internalEvent->gas.index + 1);
+		bool icd = isobaric_counterdiffusion(lastgasmix, mix, &icd_data);
+		if (icd_data.dHe < 0) {
+			put_format(&mb, "\n%s %s:%+.3g%% %s:%+.3g%%%s%+.3g%%",
+				tr("ICD").toUtf8().constData(),
+				tr("ΔHe").toUtf8().constData(), icd_data.dHe / 10.0,
+				tr("ΔN₂").toUtf8().constData(), icd_data.dN2 / 10.0,
+				icd ? ">" : "<", lrint(-icd_data.dHe / 5.0) / 10.0);
+			name += QString::fromUtf8(mb.buffer, mb.len);
+		}
+		*lastgasmix = *mix;
 	} else if (value) {
 		if (type == SAMPLE_EVENT_PO2 && same_string(internalEvent->name, "SP change")) {
 			name += QString(": %1bar").arg((double)value / 1000, 0, 'f', 1);
@@ -176,7 +204,6 @@ void DiveEventItem::setupToolTipString()
 		name += internalEvent->flags & SAMPLE_FLAGS_BEGIN ? tr(" begin", "Starts with space!") :
 								    internalEvent->flags & SAMPLE_FLAGS_END ? tr(" end", "Starts with space!") : "";
 	}
-	// qDebug() << name;
 	setToolTip(name);
 }
 
