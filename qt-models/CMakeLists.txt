@@ -5,6 +5,8 @@
 set(SUBSURFACE_GENERIC_MODELS_LIB_SRCS
 	diveplotdatamodel.cpp
 	diveimportedmodel.cpp
+	completionmodels.cpp
+	divelocationmodel.cpp
 )
 
 # models exclusively used in desktop builds
@@ -24,8 +26,6 @@ set(SUBSURFACE_DESKTOP_MODELS_LIB_SRCS
 	divetripmodel.cpp
 	diveplannermodel.cpp
 	divecomputerextradatamodel.cpp
-	completionmodels.cpp
-	divelocationmodel.cpp
 	ssrfsortfilterproxymodel.cpp
 )
 

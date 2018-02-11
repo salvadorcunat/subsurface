@@ -9,7 +9,7 @@
 
 #include <QtConcurrent>
 
-QUrl cloudImageURL(const char *hash)
+static QUrl cloudImageURL(const char *hash)
 {
 	return QUrl::fromUserInput(QString("https://cloud.subsurface-divelog.org/images/").append(hash));
 }
@@ -78,17 +78,19 @@ void ImageDownloader::saveImage(QNetworkReply *reply)
 
 }
 
-QSet<QString> queuedPictures;
-QMutex pictureQueueMutex;
-
-void loadPicture(struct picture *picture, bool fromHash)
+static void loadPicture(struct picture *picture, bool fromHash)
 {
+	static QSet<QString> queuedPictures;
+	static QMutex pictureQueueMutex;
+
 	if (!picture)
 		return;
 	QMutexLocker locker(&pictureQueueMutex);
 	if (queuedPictures.contains(QString(picture->filename)))
 		return;
 	queuedPictures.insert(QString(picture->filename));
+	locker.unlock();
+
 	ImageDownloader download(picture);
 	download.load(fromHash);
 }

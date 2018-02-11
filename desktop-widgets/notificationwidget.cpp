@@ -3,8 +3,7 @@
 
 NotificationWidget::NotificationWidget(QWidget *parent) : KMessageWidget(parent)
 {
-	future_watcher = new QFutureWatcher<void>();
-	connect(future_watcher, SIGNAL(finished()), this, SLOT(finish()));
+	connect(&future_watcher, SIGNAL(finished()), this, SLOT(finish()));
 }
 
 void NotificationWidget::showNotification(QString message, KMessageWidget::MessageType type)
@@ -15,6 +14,11 @@ void NotificationWidget::showNotification(QString message, KMessageWidget::Messa
 	setCloseButtonVisible(true);
 	setMessageType(type);
 	animatedShow();
+}
+
+void NotificationWidget::showError(QString message)
+{
+	showNotification(message, KMessageWidget::Error);
 }
 
 void NotificationWidget::hideNotification()
@@ -29,15 +33,10 @@ QString NotificationWidget::getNotificationText()
 
 void NotificationWidget::setFuture(const QFuture<void> &future)
 {
-	future_watcher->setFuture(future);
+	future_watcher.setFuture(future);
 }
 
 void NotificationWidget::finish()
 {
 	hideNotification();
-}
-
-NotificationWidget::~NotificationWidget()
-{
-	delete future_watcher;
 }

@@ -48,6 +48,8 @@ Item {
 		detailsEdit.depthText = ""
 		detailsEdit.airtempText = ""
 		detailsEdit.watertempText = ""
+		detailsEdit.divemasterText = ""
+		detailsEdit.buddyText = ""
 		suitBox.currentIndex = -1
 		buddyBox.currentIndex = -1
 		divemasterBox.currentIndex = -1
@@ -127,8 +129,7 @@ Item {
 			}
 			HintsTextEdit {
 				id: txtLocation
-				model: diveDetailsListView.currentItem && diveDetailsListView.currentItem.modelData !== null ?
-					diveDetailsListView.currentItem.modelData.dive.locationList : null
+				model: manager.locationList
 				inputMethodHints: Qt.ImhNoPredictiveText
 				Layout.fillWidth: true
 				onEditingFinished: {
@@ -224,8 +225,7 @@ Item {
 			}
 			HintsTextEdit {
 				id: suitBox
-				model: diveDetailsListView.currentItem && diveDetailsListView.currentItem.modelData !== null ?
-					diveDetailsListView.currentItem.modelData.dive.suitList : null
+				model: manager.suitList
 				inputMethodHints: Qt.ImhNoPredictiveText
 				Layout.fillWidth: true
 			}
@@ -237,8 +237,7 @@ Item {
 			}
 			HintsTextEdit {
 				id: buddyBox
-				model: diveDetailsListView.currentItem && diveDetailsListView.currentItem.modelData !== null ?
-					diveDetailsListView.currentItem.modelData.dive.buddyList : null
+				model: manager.buddyList
 				inputMethodHints: Qt.ImhNoPredictiveText
 				Layout.fillWidth: true
 			}
@@ -250,8 +249,7 @@ Item {
 			}
 			HintsTextEdit {
 				id: divemasterBox
-				model: diveDetailsListView.currentItem && diveDetailsListView.currentItem.modelData !== null ?
-					diveDetailsListView.currentItem.modelData.dive.divemasterList : null
+				model: manager.divemasterList
 				inputMethodHints: Qt.ImhNoPredictiveText
 				Layout.fillWidth: true
 			}

@@ -13,6 +13,8 @@
 #include "core/gpslocation.h"
 #include "core/downloadfromdcthread.h"
 #include "qt-models/divelistmodel.h"
+#include "qt-models/completionmodels.h"
+#include "qt-models/divelocationmodel.h"
 
 class QMLManager : public QObject {
 	Q_OBJECT
@@ -35,9 +37,10 @@ class QMLManager : public QObject {
 	Q_PROPERTY(bool syncToCloud MEMBER m_syncToCloud WRITE setSyncToCloud NOTIFY syncToCloudChanged)
 	Q_PROPERTY(int updateSelectedDive MEMBER m_updateSelectedDive WRITE setUpdateSelectedDive NOTIFY updateSelectedDiveChanged)
 	Q_PROPERTY(int selectedDiveTimestamp MEMBER m_selectedDiveTimestamp WRITE setSelectedDiveTimestamp NOTIFY selectedDiveTimestampChanged)
-	Q_PROPERTY(QStringList suitInit READ suitInit CONSTANT)
-	Q_PROPERTY(QStringList buddyInit READ buddyInit CONSTANT)
-	Q_PROPERTY(QStringList divemasterInit READ divemasterInit CONSTANT)
+	Q_PROPERTY(QStringList suitList READ suitList NOTIFY suitListChanged)
+	Q_PROPERTY(QStringList buddyList READ buddyList NOTIFY buddyListChanged)
+	Q_PROPERTY(QStringList divemasterList READ divemasterList NOTIFY divemasterListChanged)
+	Q_PROPERTY(QStringList locationList READ locationList NOTIFY locationListChanged)
 	Q_PROPERTY(QStringList cylinderInit READ cylinderInit CONSTANT)
 	Q_PROPERTY(bool showPin MEMBER m_showPin WRITE setShowPin NOTIFY showPinChanged)
 	Q_PROPERTY(QString progressMessage MEMBER m_progressMessage WRITE setProgressMessage NOTIFY progressMessageChanged)
@@ -58,6 +61,8 @@ public:
 	};
 
 	static QMLManager *instance();
+	Q_INVOKABLE void registerError(const QString &error);
+	QString consumeError();
 
 	QString cloudUserName() const;
 	void setCloudUserName(const QString &cloudUserName);
@@ -128,9 +133,10 @@ public:
 
 	DiveListSortModel *dlSortModel;
 
-	QStringList suitInit() const;
-	QStringList buddyInit() const;
-	QStringList divemasterInit() const;
+	QStringList suitList() const;
+	QStringList buddyList() const;
+	QStringList divemasterList() const;
+	QStringList locationList() const;
 	QStringList cylinderInit() const;
 	bool showPin() const;
 	void setShowPin(bool enable);
@@ -194,12 +200,17 @@ public slots:
 
 
 private:
+	BuddyCompletionModel buddyModel;
+	SuitCompletionModel suitModel;
+	DiveMasterCompletionModel divemasterModel;
+	LocationInformationModel locationModel;
 	QString m_cloudUserName;
 	QString m_cloudPassword;
 	QString m_cloudPin;
 	QString m_ssrfGpsWebUserid;
 	QString m_startPageText;
 	QString m_logText;
+	QString m_lastError;
 	bool m_locationServiceEnabled;
 	bool m_locationServiceAvailable;
 	bool m_verboseEnabled;
@@ -232,6 +243,7 @@ private:
 	bool m_libdcLog;
 	bool m_developer;
 	bool m_btEnabled;
+	void updateAllGlobalLists();
 
 #if defined(Q_OS_ANDROID)
 	QString appLogFileName;
@@ -264,6 +276,10 @@ signals:
 	void libdcLogChanged();
 	void developerChanged();
 	void btEnabledChanged();
+	void suitListChanged();
+	void buddyListChanged();
+	void divemasterListChanged();
+	void locationListChanged();
 };
 
 #endif

@@ -73,8 +73,7 @@ static int mbuf_size = 0;
 static int max_mem_used = -1;
 static int next_table_index = 0;
 static int dive_to_read = 0;
-
-static int max_deleted_seen = -1;
+static uint32_t mindiveid;
 
 /* Linked list to remember already executed divespot download requests */
 struct divespot_mapping {
@@ -316,7 +315,8 @@ static bool uemis_init(const char *path)
 	}
 	if (bytes_available(reqtxt_file) > 5) {
 		char tmp[6];
-		read(reqtxt_file, tmp, 5);
+		if (read(reqtxt_file, tmp, 5) != 5)
+			return false;
 		tmp[5] = '\0';
 #if UEMIS_DEBUG & 2
 		fprintf(debugfile, "::r req.txt \"%s\"\n", tmp);
@@ -593,7 +593,8 @@ static bool uemis_get_answer(const char *path, char *request, int n_param_in,
 #endif
 			return false;
 		}
-		read(ans_file, tmp, 100);
+		if (read(ans_file, tmp, 100) < 0)
+			return false;
 		close(ans_file);
 #if UEMIS_DEBUG & 8
 		tmp[100] = '\0';
@@ -1034,6 +1035,7 @@ static char *uemis_get_divenr(char *deviceidstr, int force)
 	char divenr[10];
 	struct dive_table *table;
 	deviceid = atoi(deviceidstr);
+	mindiveid = 0xFFFFFFFF;
 
 	/*
 	 * If we are are retrying after a disconnect/reconnect, we
@@ -1055,16 +1057,13 @@ static char *uemis_get_divenr(char *deviceidstr, int force)
 			continue;
 		for_each_dc (d, dc) {
 			if (dc->model && !strcmp(dc->model, "Uemis Zurich") &&
-			    (dc->deviceid == 0 || dc->deviceid == 0x7fffffff || dc->deviceid == deviceid) &&
-			    dc->diveid > maxdiveid)
-				maxdiveid = dc->diveid;
+			    (dc->deviceid == 0 || dc->deviceid == 0x7fffffff || dc->deviceid == deviceid)) {
+				if (dc->diveid > maxdiveid)
+					maxdiveid = dc->diveid;
+				if (dc->diveid < mindiveid)
+					mindiveid = dc->diveid;
+			}
 		}
-	}
-	if (max_deleted_seen >= 0 && maxdiveid < (uint32_t)max_deleted_seen) {
-		maxdiveid = max_deleted_seen;
-#if UEMIS_DEBUG & 4
-		fprintf(debugfile, "overriding max seen with max deleted seen %d\n", max_deleted_seen);
-#endif
 	}
 	snprintf(divenr, 10, "%d", maxdiveid);
 	return strdup(divenr);
@@ -1077,6 +1076,7 @@ static bool do_dump_buffer_to_file(char *buf, char *prefix)
 	char path[100];
 	char date[40];
 	char obid[40];
+	bool success;
 	if (!buf)
 		return false;
 
@@ -1101,10 +1101,10 @@ static bool do_dump_buffer_to_file(char *buf, char *prefix)
 	int dumpFile = subsurface_open(path, O_RDWR | O_CREAT, 0666);
 	if (dumpFile == -1)
 		return false;
-	write(dumpFile, buf, strlen(buf));
+	success = write(dumpFile, buf, strlen(buf)) == strlen(buf);
 	close(dumpFile);
 	bufCnt++;
-	return true;
+	return success;
 }
 #endif
 
@@ -1216,6 +1216,7 @@ static bool get_matching_dive(int idx, char *newmax, int *uemis_mem_status, devi
 	bool found_below = false;
 	bool found_above = false;
 	int deleted_files = 0;
+	int fail_count = 0;
 
 	snprintf(log_file_no_to_find, sizeof(log_file_no_to_find), "logfilenr{int{%d", dive->dc.diveid);
 #if UEMIS_DEBUG & 2
@@ -1263,7 +1264,6 @@ static bool get_matching_dive(int idx, char *newmax, int *uemis_mem_status, devi
 						fprintf(debugfile, "TRY matching dive log id %d from %s with dive details %d but details are deleted\n", dive->dc.diveid, d_time, dive_to_read);
 #endif
 						deleted_files++;
-						max_deleted_seen = dive_to_read;
 						/* mark this log entry as deleted and cleanup later, otherwise we mess up our array */
 						dive->downloaded = false;
 #if UEMIS_DEBUG & 2
@@ -1283,6 +1283,10 @@ static bool get_matching_dive(int idx, char *newmax, int *uemis_mem_status, devi
 						}
 						if (dive_to_read < -1)
 							dive_to_read = -1;
+					} else if (!strstr(mbuf, "act{") && ++fail_count == 10) {
+						if (verbose)
+							fprintf(stderr, "Uemis downloader: Cannot access dive details - searching from start\n");
+						dive_to_read = -1;
 					}
 				}
 			}
@@ -1347,10 +1351,10 @@ const char *do_uemis_import(device_data_t *data)
 	param_buff[1] = "notempty";
 	newmax = uemis_get_divenr(deviceid, force_download);
 	if (verbose)
-		fprintf(stderr, "Uemis downloader: start looking at dive nr %s", newmax);
+		fprintf(stderr, "Uemis downloader: start looking at dive nr %s\n", newmax);
 
 	first = start = atoi(newmax);
-	dive_to_read = first;
+	dive_to_read = mindiveid < first ? first - mindiveid : first;
 	for (;;) {
 #if UEMIS_DEBUG & 2
 		debug_round++;

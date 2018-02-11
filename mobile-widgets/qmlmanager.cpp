@@ -17,6 +17,7 @@
 
 #include "qt-models/divelistmodel.h"
 #include "qt-models/gpslistmodel.h"
+#include "qt-models/completionmodels.h"
 #include "core/divelist.h"
 #include "core/device.h"
 #include "core/pref.h"
@@ -35,6 +36,15 @@ QMLManager *QMLManager::m_instance = NULL;
 #define END_FONT QLatin1Literal("</font>")
 
 #define NOCLOUD_LOCALSTORAGE format_string("%s/cloudstorage/localrepo[master]", system_default_directory())
+
+extern "C" void showErrorFromC(char *buf)
+{
+	QString error(buf);
+	free(buf);
+	// By using invokeMethod with Qt:AutoConnection, the error string is safely
+	// transported across thread boundaries, if not called from the UI thread.
+	QMetaObject::invokeMethod(QMLManager::instance(), "registerError", Qt::AutoConnection, Q_ARG(QString, error));
+}
 
 static void progressCallback(const char *text)
 {
@@ -77,6 +87,21 @@ extern "C" int gitProgressCB(const char *text)
 	}
 	// return 0 so that we don't end the download
 	return 0;
+}
+
+void QMLManager::registerError(const QString &error)
+{
+	appendTextToLog(error);
+	if (!m_lastError.isEmpty())
+		m_lastError += '\n';
+	m_lastError += error;
+}
+
+QString QMLManager::consumeError()
+{
+	QString ret;
+	ret.swap(m_lastError);
+	return ret;
 }
 
 void QMLManager::btHostModeChange(QBluetoothLocalDevice::HostMode state)
@@ -133,6 +158,7 @@ QMLManager::QMLManager() : m_locationServiceEnabled(false),
 				+ " at " + QDateTime::currentDateTime().toString());
 	}
 #endif
+	set_error_cb(&showErrorFromC);
 	appendTextToLog("Starting " + getUserAgent());
 	appendTextToLog(QStringLiteral("built with libdivecomputer v%1").arg(dc_version(NULL)));
 	appendTextToLog(QStringLiteral("built with Qt Version %1, runtime from Qt Version %2").arg(QT_VERSION_STR).arg(qVersion()));
@@ -247,6 +273,15 @@ void QMLManager::openLocalThenRemote(QString url)
 		appendTextToLog(QStringLiteral("have cloud credentials, trying to connect"));
 		tryRetrieveDataFromBackend();
 	}
+	updateAllGlobalLists();
+}
+
+void QMLManager::updateAllGlobalLists()
+{
+	buddyModel.updateModel(); emit buddyListChanged();
+	suitModel.updateModel(); emit suitListChanged();
+	divemasterModel.updateModel(); emit divemasterListChanged();
+	locationModel.update(); emit locationListChanged();
 }
 
 void QMLManager::mergeLocalRepo()
@@ -315,7 +350,6 @@ void QMLManager::finishSetup()
 		int error = parse_file(existing_filename);
 		if (error) {
 			// we got an error loading the local file
-			appendTextToLog(QString("got error %2 when parsing file %1").arg(existing_filename, get_error_string()));
 			setNotificationText(tr("Error parsing local storage, giving up"));
 			set_filename(NULL);
 		} else {
@@ -559,9 +593,7 @@ void QMLManager::loadDivesWithValidCredentials()
 	QString url;
 	timestamp_t currentDiveTimestamp = m_selectedDiveTimestamp;
 	if (getCloudURL(url)) {
-		QString errorString(get_error_string());
-		appendTextToLog(errorString);
-		setStartPageText(RED_FONT + tr("Cloud storage error: %1").arg(errorString) + END_FONT);
+		setStartPageText(RED_FONT + tr("Cloud storage error: %1").arg(consumeError()) + END_FONT);
 		revertToNoCloudIfNeeded();
 		return;
 	}
@@ -585,14 +617,10 @@ void QMLManager::loadDivesWithValidCredentials()
 	}
 	if (!error) {
 		report_error("filename is now %s", fileNamePrt.data());
-		QString errorString(get_error_string());
-		appendTextToLog(errorString);
 		set_filename(fileNamePrt.data());
 	} else {
 		report_error("failed to open file %s", fileNamePrt.data());
-		QString errorString(get_error_string());
-		appendTextToLog(errorString);
-		setNotificationText(errorString);
+		setNotificationText(consumeError());
 		revertToNoCloudIfNeeded();
 		set_filename(NULL);
 		return;
@@ -1078,6 +1106,7 @@ void QMLManager::changesNeedSaving()
 #elif !defined(Q_OS_IOS)
 	saveChangesCloud(false);
 #endif
+	updateAllGlobalLists();
 }
 
 void QMLManager::openNoCloudRepo()
@@ -1094,8 +1123,7 @@ void QMLManager::openNoCloudRepo()
 	git = is_git_repository(filename, &branch, NULL, false);
 
 	if (git == dummy_git_repository) {
-		if (git_create_local_repo(filename))
-			appendTextToLog(get_error_string());
+		git_create_local_repo(filename);
 		set_filename(filename);
 		auto s = SettingsObjectWrapper::instance()->general_settings;
 		s->setDefaultFilename(filename);
@@ -1111,8 +1139,7 @@ void QMLManager::saveChangesLocal()
 		if (m_credentialStatus == CS_NOCLOUD) {
 			if (empty_string(existing_filename)) {
 				char *filename = NOCLOUD_LOCALSTORAGE;
-				if (git_create_local_repo(filename))
-					appendTextToLog(get_error_string());
+				git_create_local_repo(filename);
 				set_filename(filename);
 				auto s = SettingsObjectWrapper::instance()->general_settings;
 				s->setDefaultFilename(filename);
@@ -1132,9 +1159,7 @@ void QMLManager::saveChangesLocal()
 		bool glo = prefs.git_local_only;
 		prefs.git_local_only = true;
 		if (save_dives(existing_filename)) {
-			QString errorString(get_error_string());
-			appendTextToLog(errorString);
-			setNotificationText(errorString);
+			setNotificationText(consumeError());
 			set_filename(NULL);
 			prefs.git_local_only = glo;
 			alreadySaving = false;
@@ -1534,55 +1559,24 @@ void QMLManager::quit()
 	QApplication::quit();
 }
 
-QStringList QMLManager::suitInit() const
+QStringList QMLManager::suitList() const
 {
-	QStringList suits;
-	struct dive *d;
-	int i = 0;
-	for_each_dive (i, d) {
-		QString temp = d->suit;
-		if (!temp.isEmpty())
-			suits << d->suit;
-	}
-	suits.removeDuplicates();
-	suits.sort();
-	return suits;
+	return suitModel.stringList();
 }
 
-QStringList QMLManager::buddyInit() const
+QStringList QMLManager::buddyList() const
 {
-	QStringList buddies;
-	struct dive *d;
-	int i = 0;
-	for_each_dive (i, d) {
-		QString temp = d->buddy;
-		if (!temp.isEmpty() && !temp.contains(",")){
-			buddies << d->buddy;
-		}
-		else if (!temp.isEmpty()){
-			QRegExp sep("(,\\s)");
-			QStringList tempList = temp.split(sep);
-			buddies << tempList;
-		}
-	}
-	buddies.removeDuplicates();
-	buddies.sort();
-	return buddies;
+	return buddyModel.stringList();
 }
 
-QStringList QMLManager::divemasterInit() const
+QStringList QMLManager::divemasterList() const
 {
-	QStringList divemasters;
-	struct dive *d;
-	int i = 0;
-	for_each_dive (i, d) {
-		QString temp = d->divemaster;
-		if (!temp.isEmpty())
-			divemasters << d->divemaster;
-	}
-	divemasters.removeDuplicates();
-	divemasters.sort();
-	return divemasters;
+	return divemasterModel.stringList();
+}
+
+QStringList QMLManager::locationList() const
+{
+	return locationModel.allSiteNames();
 }
 
 QStringList QMLManager::cylinderInit() const

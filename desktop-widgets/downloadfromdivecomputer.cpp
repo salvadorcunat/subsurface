@@ -14,13 +14,6 @@
 #include <QMessageBox>
 #include <QShortcut>
 
-namespace DownloadFromDcGlobal {
-	const char *err_string;
-};
-
-// Workaround abuse of old libdc types
-#define DC_TRANSPORT_BLUETOOTH 1024
-
 DownloadFromDCWidget::DownloadFromDCWidget(QWidget *parent, Qt::WindowFlags f) : QDialog(parent, f),
 	downloading(false),
 	previousLast(0),
@@ -221,9 +214,6 @@ void DownloadFromDCWidget::updateState(states state)
 	// got an error
 	else if (state == ERROR) {
 		timer->stop();
-
-		// Show messages that worker thread produced.
-		MainWindow::instance()->showErrors();
 
 		QMessageBox::critical(this, TITLE_OR_TEXT(tr("Error"), thread.error), QMessageBox::Ok);
 		markChildrenAsEnabled();

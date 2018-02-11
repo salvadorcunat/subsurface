@@ -6,11 +6,6 @@
 #include <QFuture>
 #include <QNetworkReply>
 
-typedef QPair<QString, QByteArray> SHashedFilename;
-
-extern QUrl cloudImageURL(const char *hash);
-
-
 class ImageDownloader : public QObject {
 	Q_OBJECT;
 public:

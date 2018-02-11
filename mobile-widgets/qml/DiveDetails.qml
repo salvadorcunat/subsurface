@@ -237,13 +237,13 @@ Kirigami.Page {
 		depth = currentItem.modelData.dive.depth
 		airtemp = currentItem.modelData.dive.airTemp
 		watertemp = currentItem.modelData.dive.waterTemp
-		suitIndex = currentItem.modelData.dive.suitList.indexOf(currentItem.modelData.dive.suit)
+		suitIndex = manager.suitList.indexOf(currentItem.modelData.dive.suit)
 		if (currentItem.modelData.dive.buddy.indexOf(",") > 0) {
 			buddyText = currentItem.modelData.dive.buddy;
 		} else {
-			buddyIndex = currentItem.modelData.dive.buddyList.indexOf(currentItem.modelData.dive.buddy)
+			buddyIndex = manager.buddyList.indexOf(currentItem.modelData.dive.buddy)
 		}
-		divemasterIndex = currentItem.modelData.dive.divemasterList.indexOf(currentItem.modelData.dive.divemaster)
+		divemasterIndex = manager.divemasterList.indexOf(currentItem.modelData.dive.divemaster)
 		notes = currentItem.modelData.dive.notes
 		if (currentItem.modelData.dive.singleWeight) {
 			// we have only one weight, go ahead, have fun and edit it
