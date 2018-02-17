@@ -51,7 +51,7 @@ find ./appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " "
 bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh
 
 # Just for testing. Remove for master patch
-find ../../../install-root
+find ./install-root
 ###########################################
 
 mkdir -pv ./smtk2ssrf_appdir/usr/share/metainfo
