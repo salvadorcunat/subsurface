@@ -63,7 +63,7 @@ cp -vf subsurface/icons/subsurface-icon.svg smtk2ssrf_appdir/
 cp -vf subsurface/smtk-import/smtk2ssrf.desktop smtk2ssrf_appdir/
 cp -vf install-root/bin/smtk2ssrf smtk2ssrf_appdir/usr/bin/
 cp -vf install-root/lib/libdivecomputer.so.0 smtk2ssrf_appdir/usr/lib/
-cp -vrf /usr/lib/x86_64-linux-gnu/qt5/plugins/{bearer,iconengines,imageformats,platforminputcontexts,platforms,platformthemes,sensors,xcbglintegrations} smtk2ssrf_appdir/usr/lib/qt5/plugins/
+cp -vrf /usr/lib/x86_64-linux-gnu/qt5/plugins/{bearer,iconengines,imageformats,platforminputcontexts,platforms,platformthemes} smtk2ssrf_appdir/usr/lib/qt5/plugins/
 ldd smtk2ssrf_appdir/usr/bin/smtk2ssrf | grep "=>" |grep -v vdso | awk '{print $3}' | xargs -I '{}' cp -v '{}' smtk2ssrf_appdir/usr/lib
 ldd smtk2ssrf_appdir/usr/lib/qt5/plugins/platforms/libqxcb.so | grep "=>" | grep -v vdso |grep -v ld-linux |awk '{print $3}' | xargs -I '{}' cp -v '{}' smtk2ssrf_appdir/usr/lib
 ./linuxdeployqt*.AppImage ./smtk2ssrf_appdir/smtk2ssrf.desktop -bundle-non-qt-libs -verbose=2
