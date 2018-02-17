@@ -15,7 +15,7 @@ export CMAKE_PREFIX_PATH=$QT_ROOT/lib/cmake
 # to create an AppImage
 cd ..
 
-bash -e -x ./subsurface/scripts/build.sh -desktop -no-bt
+#bash -e -x ./subsurface/scripts/build.sh -desktop -no-bt
 rm -rf subsurface/build
 bash -e -x ./subsurface/scripts/build.sh -both -create-appdir -build-with-webkit
 
@@ -49,6 +49,21 @@ export VERSION=$(cd ${TRAVIS_BUILD_DIR}/scripts ; ./get-version linux) # linuxde
 ./linuxdeployqt*.AppImage ./appdir/usr/share/applications/*.desktop -appimage -qmldir=./subsurface/map-widget/ -verbose=2
 find ./appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
 bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh
-cd subsurface/smtk-import/build
-make install
+
+# Just for testing. Remove for master patch
 find ../../../install-root
+###########################################
+
+mkdir -pv ./smtk2ssrf_appdir/usr/share/metainfo
+mkdir -pv ./smtk2ssrf_appdir/icons/hicolor/256x256/apps
+mkdir -pv ./smtk2ssrf_appdir/usr/plugins
+mkdir -pv ./smtk2ssrf_appdir/usr/bin
+mkdir -pv ./smtk2ssrf_appdir/usr/lib/qt5/plugins
+cp -vf subsurface/icons/subsurface-icon.svg smtk2ssrf_appdir/
+cp -vf subsurface/smtk-import/smtk2ssrf.desktop smtk2ssrf_appdir/
+cp -vf install_root/bin/smtk2ssrf smtk2ssrf_appdir/usr/bin/
+#cp -vrf /usr/lib/x86_64-linux-gnu/qt5/plugins/{bearer,iconengines,imageformats,platforminputcontexts,platforms,platformthemes,sensors,xcbglintegrations} smtk2ssrf_appdir/usr/lib/qt5/plugins/
+./linuxdeployqt*.AppImage ./smtk2ssrf_appdir/smtk2ssrf.desktop -bundle-non-qt-libs -verbose=2
+./linuxdeployqt*.AppImage ./smtk2ssrf_appdir/smtk2ssrf.desktop -appimage -verbose=2
+find ./smtk2ssrf_appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
+
