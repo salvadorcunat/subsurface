@@ -57,7 +57,7 @@ bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh
 ## Just for testing. Remove for master patch
 #find ./install-root
 ############################################
-
+export LIBRARY_PATH="${TRAVIS_BUILD_DIR}"/../install-root/lib:"$LIBRARY_PATH"
 mkdir -p ./smtk2ssrf_appdir/usr/share/metainfo
 mkdir -p ./smtk2ssrf_appdir/icons/hicolor/256x256/apps
 mkdir -p ./smtk2ssrf_appdir/usr/plugins
