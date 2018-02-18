@@ -10,9 +10,11 @@ export PATH=$QT_ROOT/bin:$PATH # Make sure correct qmake is found on the $PATH f
 export CMAKE_PREFIX_PATH=$QT_ROOT/lib/cmake
 
 # the global build script expects to be called from the directory ABOVE subsurface
-cd ..
+# debug
+pwd
+cd ${TRAVIS_BUILD_DIR}/..
 
-bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh -b Debug
+bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh
 
 export QT_PLUGIN_PATH=$QT_ROOT/plugins
 export QT_QPA_PLATFORM_PLUGIN_PATH=$QT_ROOT/plugins
