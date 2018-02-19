@@ -49,27 +49,25 @@ export VERSION=$(cd ${TRAVIS_BUILD_DIR}/scripts ; ./get-version linux) # linuxde
 ./linuxdeployqt*.AppImage ./appdir/usr/share/applications/*.desktop -appimage -qmldir=./subsurface/map-widget/ -verbose=2
 find ./appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
 
+# Build Smtk2ssrf
+#
 bash -e -x ./subsurface/scripts/smtk2ssrf-build.sh
-#unset QTDIR
-#unset QT_PLUGIN_PATH
-#unset LD_LIBRARY_PATH
 
-## Just for testing. Remove for master patch
-#find ./install-root
-############################################
-export LIBRARY_PATH="${TRAVIS_BUILD_DIR}"/../install-root/lib:"$LIBRARY_PATH"
-mkdir -p ./smtk2ssrf_appdir/usr/share/metainfo
-mkdir -p ./smtk2ssrf_appdir/icons/hicolor/256x256/apps
+# Create AppImage for smtk2ssrf
+#
+mkdir -p ./smtk2ssrf_appdir/usr/share
 mkdir -p ./smtk2ssrf_appdir/usr/plugins
 mkdir -p ./smtk2ssrf_appdir/usr/bin
-mkdir -p ./smtk2ssrf_appdir/usr/lib/qt5/plugins
+mkdir -p ./smtk2ssrf_appdir/usr/lib
 cp -f subsurface/icons/subsurface-icon.svg smtk2ssrf_appdir/
 cp -f subsurface/smtk-import/smtk2ssrf.desktop smtk2ssrf_appdir/
 cp -f install-root/bin/smtk2ssrf smtk2ssrf_appdir/usr/bin/
 cp -f install-root/lib/libdivecomputer.so.0 smtk2ssrf_appdir/usr/lib/
 cp -f install-root/lib/libgit2* smtk2ssrf_appdir/usr/lib/
+# Why is Grantlee needed? We have built subsurface without printing support!!!
 cp -f install-root/lib/libGrantlee* smtk2ssrf_appdir/usr/lib/
-cp -rf appdir/usr/plugins/ smtk2ssrf_appdir/usr/
+cp -rf appdir/usr/plugins/{bearer,iconengines,imageformats,platforms,xcbglintegrations} smtk2ssrf_appdir/usr/plugins
+
 ./linuxdeployqt*.AppImage ./smtk2ssrf_appdir/smtk2ssrf.desktop -bundle-non-qt-libs -verbose=2
 ./linuxdeployqt*.AppImage ./smtk2ssrf_appdir/smtk2ssrf.desktop -appimage -verbose=2
 find ./smtk2ssrf_appdir -executable -type f -exec ldd {} \; | grep " => /usr" | cut -d " " -f 2-3 | sort | uniq
