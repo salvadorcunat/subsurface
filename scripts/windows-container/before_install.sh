@@ -8,7 +8,7 @@ set -e
 TRAVIS_BUILD_DIR=${TRAVIS_BUILD_DIR:-$PWD}
 
 git fetch --unshallow || true # if running locally, unshallow could fail
-git pull --tags
+git pull --tags origin master
 git submodule init
 git describe
 
@@ -32,6 +32,7 @@ autoreconf --install
 # build results outside of the container
 cd ${TRAVIS_BUILD_DIR}/..
 mkdir -p win32
+rm -rf win32/*
 
 # start the container and keep it running
 docker run -v $PWD/win32:/win/win32 -v $PWD/subsurface:/win/subsurface --name=builder -w /win -d dirkhh/mxe-build-container:0.6 /bin/sleep 60m
