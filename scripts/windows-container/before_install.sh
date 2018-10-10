@@ -50,13 +50,15 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . grantlee
 # the rest we'll need when we enable smtk2ssrf
 
 #echo "Get mdbtools"
-#cd ${TRAVIS_BUILD_DIR}/..
+#cd ${TRAVIS_BUILD_DIR}/../win32
 #git clone https://github.com/brianb/mdbtools.git
+docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 
 # get prebuilt mxe libraries for mdbtools and glib.
 # do not overwrite upstream prebuilt mxe binaries if there is any coincidence.
-#wget https://www.dropbox.com/s/842skyusb96ii1u/mxe-static-minimal-994ad473.tar.xz
-#[[ ! -f mxe-static-minimal-994ad473.tar.xz ]] && exit 1
+#echo "Downloading mxe static build"
+docker exec -t builder wget -q https://www.dropbox.com/s/fesfbzqzkgee5ut/mxe-static-minimal-97c0fbfd_1.tar.xz
+#[[ ! -f mxe-static-minimal-97c0fbfd_1.tar.xz ]] && exit 1
 #cd mxe
-#tar -xJf ../mxe-static-minimal-994ad473.tar.xz --skip-old-files
+docker exec -t builder tar -C /win/mxe -xJf mxe-static-minimal-97c0fbfd_1.tar.xz --skip-old-files
 #ls -al usr/
