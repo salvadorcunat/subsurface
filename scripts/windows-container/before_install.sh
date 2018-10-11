@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+#set -x
 set -e
 
 # when running this locally, set TRAVIS_BUILD_DIR to the Subsurface
