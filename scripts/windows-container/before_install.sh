@@ -47,19 +47,10 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . hidapi
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . googlemaps
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . grantlee
 
-
-# the rest we'll need when we enable smtk2ssrf
-
-#echo "Get mdbtools"
-#cd ${TRAVIS_BUILD_DIR}/../win32
-#git clone https://github.com/brianb/mdbtools.git
+# enable smtk2ssrf
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 
-# get prebuilt mxe libraries for mdbtools and glib.
+# get prebuilt static mxe libraries for glib.
 # do not overwrite upstream prebuilt mxe binaries if there is any coincidence.
-#echo "Downloading mxe static build"
 docker exec -t builder wget -q https://www.dropbox.com/s/fesfbzqzkgee5ut/mxe-static-minimal-97c0fbfd_1.tar.xz
-#[[ ! -f mxe-static-minimal-97c0fbfd_1.tar.xz ]] && exit 1
-#cd mxe
 docker exec -t builder tar -C /win/mxe -xJf mxe-static-minimal-97c0fbfd_1.tar.xz --skip-old-files
-#ls -al usr/
