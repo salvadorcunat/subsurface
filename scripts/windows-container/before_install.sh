@@ -50,6 +50,9 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . grantlee
 # enable smtk2ssrf
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 
+# hmmmm. The container doesn't seem to have libtool installed
+docker exec -t builder apt-get -y install libtool
+
 # get prebuilt static mxe libraries for glib.
 # do not overwrite upstream prebuilt mxe binaries if there is any coincidence.
 docker exec -t builder wget -q https://www.dropbox.com/s/b2iw7p5e6c52gf4/mxe-static-minimal-97c0fbfd.tar.xz
