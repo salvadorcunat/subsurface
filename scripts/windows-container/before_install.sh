@@ -54,6 +54,6 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 # get prebuilt static mxe libraries for glib.
 # do not overwrite upstream prebuilt mxe binaries if there is any coincidence.
 echo -n "Downloading prebuilt static mxe ... "
-docker exec -t builder wget -q https://www.dropbox.com/s/8clyxo8zjx1arvn/mxe-static-minimal-97c0fbfd_2.tar.xz
-docker exec -t builder tar -C /win/mxe -xJf mxe-static-minimal-97c0fbfd_2.tar.xz --skip-old-files
+docker exec -t builder wget -q https://www.dropbox.com/s/qpi9sygr57er6pw/mxe-static-minimal-97c0fbfd_4.tar.xz
+docker exec -t builder tar -C /win/mxe -xJf mxe-static-minimal-97c0fbfd_4.tar.xz --skip-old-files
 echo "Done."
