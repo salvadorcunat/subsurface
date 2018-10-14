@@ -55,6 +55,6 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 echo -n "Downloading prebuilt static mxe ... "
 docker exec -t builder wget -q https://www.dropbox.com/s/2ahfkyi6rhbihtn/mxe-static-minimal-a08b3225.tar.xz
 echo -n "Untarring ... "
-docker exec -t builder tar -C /win/mxe -xJf mxe-static-minimal-a08b3225.tar.xz --skip-old-files
+docker exec -t builder tar -C "${TRAVIS_BUILD_DIR}"/../mxe -xJf mxe-static-minimal-a08b3225.tar.xz --skip-old-files
 echo "Done."
-docker exec -t builder ln -vs /win/mxe /usr/src/mxe
+docker exec -t builder ln -vs "${TRAVIS_BUILD_DIR}"/../mxe /usr/src/mxe
