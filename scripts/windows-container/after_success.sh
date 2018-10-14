@@ -1,12 +1,4 @@
 #!/bin/bash
-RED="\033[0;31m"
-DEFAULT="\033[0m"
-echo "$RED
-***********************************************************************
-************************ Begin after_success.sh ***********************
-***********************************************************************
-$DEFAULT
-"
 
 if [ ! -z $TRAVIS_BRANCH ] && [ "$TRAVIS_BRANCH" != "master" ] ; then
 	export UPLOADTOOL_SUFFIX=$TRAVIS_BRANCH

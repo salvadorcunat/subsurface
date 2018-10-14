@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#set -x
+set -x
 set -e
 
 # when running this locally, set TRAVIS_BUILD_DIR to the Subsurface
@@ -37,8 +37,8 @@ rm -rf win32/*
 # start the container and keep it running
 docker run -v $PWD/win32:/win/win32 -v $PWD/subsurface:/win/subsurface --name=builder -w /win -d dirkhh/mxe-build-container:0.6 /bin/sleep 60m
 
-# hmmmm. The container doesn't seem to have libtool installed
 # for some reason this package was installed but still isn't there?
+# hmmmm. The container doesn't seem to have libtool installed
 docker exec -t builder apt-get install -y ca-certificates libtool
 
 # now set up our other dependencies
@@ -48,7 +48,7 @@ docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . hidapi
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . googlemaps
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . grantlee
 
-# enable smtk2ssrf
+# smtk2ssrf build
 docker exec -t builder bash subsurface/scripts/get-dep-lib.sh single . mdbtools
 
 # get prebuilt static mxe libraries for glib.
