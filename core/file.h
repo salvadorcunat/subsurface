@@ -21,7 +21,8 @@ extern int try_to_open_cochran(const char *filename, struct memblock *mem, struc
 extern int try_to_open_liquivision(const char *filename, struct memblock *mem, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);
 extern int datatrak_import(struct memblock *mem, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);
 extern void ostctools_import(const char *file, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);
-
+extern int logtrak_import(struct memblock *mem, struct dive_table *table);
+extern int scubapro_asd_import(struct memblock *mem, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);
 extern int readfile(const char *filename, struct memblock *mem);
 extern int parse_file(const char *filename, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);
 extern int try_to_open_zip(const char *filename, struct dive_table *table, struct trip_table *trips, struct dive_site_table *sites);

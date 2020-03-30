@@ -365,7 +365,22 @@ int parse_file(const char *filename, struct dive_table *table, struct trip_table
 		ostctools_import(filename, table, trips, sites);
 		return 0;
 	}
-
+	/* LogTrak */
+	if (fmt && (!strcasecmp(fmt+1, "script"))) {
+		ret = logtrak_import(&mem, table);
+		if (ret != 0)
+			report_error("LogTrak import failed");
+		free(mem.buffer);
+		return ret;
+	}
+	/* Scubapro ASD files */
+	if (fmt && (!strcasecmp(fmt + 1, "asd"))) {
+		ret = scubapro_asd_import(&mem, table, trips, sites);
+		if (ret != 0)
+			report_error("Scubapro ASD import failed");
+		free(mem.buffer);
+		return ret;
+	}
 	ret = parse_file_buffer(filename, &mem, table, trips, sites);
 	free(mem.buffer);
 	return ret;

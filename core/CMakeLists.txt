@@ -113,6 +113,7 @@ set(SUBSURFACE_CORE_LIB_SRCS
 	libdivecomputer.c
 	libdivecomputer.h
 	liquivision.c
+	logtrak.c
 	load-git.c
 	membuffer.c
 	membuffer.h
@@ -142,6 +143,7 @@ set(SUBSURFACE_CORE_LIB_SRCS
 	save-xml.c
 	selection.cpp
 	selection.h
+	scubapro_asd.c
 	sha1.c
 	sha1.h
 	ssrf.h
