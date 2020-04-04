@@ -44,14 +44,18 @@ extern char *add_to_string_w_sep(char *orig, const char *sep, const char *fmt, .
 #define LIBDC_TZ		16
 #define LIBDC_MAX_DEPTH		22
 #define LIBDC_DIVE_TIME		26
+#define LIBDC_DIVE_TIME_ALADINTEC	24
 #define LIBDC_MAX_TEMP		28
 #define LIBDC_MIN_TEMP		30
+#define LIBDC_MIN_TEMP_ALADINTEC	26
 #define LIBDC_SURF_TEMP		32
 #define LIBDC_GASMIX		44
+#define LIBDC_GASMIX_ALADINTEC		30
 #define LIBDC_TANK_PRESS	50
 
 #define LIBDC_SAMPLES_MANTIS	152
 #define LIBDC_SAMPLES_G2	84
+#define LIBDC_SAMPLES_ALADINTEC	108
 #define ASD_SAMPLES		183
 
 /*
@@ -70,6 +74,12 @@ extern char *add_to_string_w_sep(char *orig, const char *sep, const char *fmt, .
 #define G2_MAX_TEMP		148
 #define G2_MIN_TEMP		34
 #define G2_SURF_TEMP		18
+
+#define ALADINTEC_MAXDEPTH	30
+#define ALADINTEC_DIVE_TIME	32
+#define ALADINTEC_MIN_TEMP	34
+#define ALADINTEC_MAX_TEMP	18
+#define ALADINTEC_GAS_MIX	36
 
 /*
  * Returns a dc_descriptor_t structure based on dc  model's number.
@@ -166,8 +176,16 @@ unsigned char *build_dc_data(int model, unsigned char *input, int max, int *out_
 		memcpy(buffer + LIBDC_SURF_TEMP, ptr + G2_SURF_TEMP, 2);
 		memcpy(buffer + LIBDC_SAMPLES_G2, ptr + ASD_SAMPLES, max - ASD_SAMPLES);
 		break;
+	case ALADINTEC:
+		memcpy(buffer + LIBDC_MAX_DEPTH, ptr + ALADINTEC_MAXDEPTH, 2);
+		memcpy(buffer + LIBDC_DIVE_TIME_ALADINTEC, ptr + ALADINTEC_DIVE_TIME, 2);
+		memcpy(buffer + LIBDC_MAX_TEMP, ptr + ALADINTEC_MAX_TEMP, 2);
+		memcpy(buffer + LIBDC_MIN_TEMP_ALADINTEC, ptr + ALADINTEC_MIN_TEMP, 2);
+		memcpy(buffer + LIBDC_GASMIX_ALADINTEC, ptr + ALADINTEC_GAS_MIX, 2);
+		memcpy(buffer + LIBDC_SAMPLES_ALADINTEC, ptr + ASD_SAMPLES, max - ASD_SAMPLES);
+		break;
 	default:
-		fprintf(stderr, "Unsupported DC model 0x%2xd\n", model);
+		fprintf(stderr, "Unsupported DC model 0x%2x\n", model);
 		free(buffer);
 		buffer = NULL;
 	}
@@ -230,13 +248,15 @@ static void asd_build_dive_site(char *instring, char *coords, struct dive_site_t
 
 /*
  * Parse a dive in a mem buffer and return a pointer to next dive
- * or NULL if something goes wrong.
+ * or to the end of DC data if anything goes wrong. This way we can
+ * process further dives which can be correct.
  */
-unsigned char *asd_dive_parser(unsigned char *input, struct dive *asd_dive, struct dive_site_table *sites, unsigned char *maxptr)
+static bool asd_dive_parser(unsigned char *input, unsigned char *outptr, struct dive *asd_dive, struct dive_site_table *sites, unsigned char *maxptr)
 {
 	int dc_model, tmp = 0, rc = 0, size = 0;
 	long dc_serial;
 	unsigned char *ptr = input, *ptr1, *dc_data, end_seq[] = {0xff, 0xfe, 0xff};
+	char *d_locat, *d_point, *d_coords, *tmp_string;
 	device_data_t *devdata = calloc(1, sizeof(device_data_t));
 	asd_dive->dc.serial = calloc(64, 1);		// 64 bytes long seems more than suffice for a serial
 
@@ -282,12 +302,12 @@ unsigned char *asd_dive_parser(unsigned char *input, struct dive *asd_dive, stru
 	 * data, for two byte chars. Thus "Hello world" is 0x16 bytes long.
 	 * There are no string fields merged with string ones, making things a bit more dificult.
          */
-	char *d_locat = asd_to_string(ptr, &ptr);
-	char *d_point = asd_to_string(ptr, &ptr);
-	char *tmp_string = add_to_string_w_sep(d_locat, ", ", "%s", d_point);
+	d_locat = asd_to_string(ptr, &ptr);
+	d_point = asd_to_string(ptr, &ptr);
+	tmp_string = add_to_string_w_sep(d_locat, ", ", "%s", d_point);
 	free(d_locat);
 	free(d_point);
-	char *d_coords = asd_to_string(ptr, &ptr);
+	d_coords = asd_to_string(ptr, &ptr);
 	asd_build_dive_site(tmp_string, d_coords, sites, &asd_dive->dive_site);
 	// next two bytes are the tank volume (mililiters) and two following are
 	// unknown (always zero).
@@ -305,11 +325,13 @@ unsigned char *asd_dive_parser(unsigned char *input, struct dive *asd_dive, stru
 	asd_to_string(ptr, &ptr);
 	ptr += 6;  //*
 	asd_dive->notes = asd_to_string(ptr, &ptr);
-	return ptr;
+	outptr = ptr;
+	return true;
 bailout:
 	free(devdata);
 	free(asd_dive->dc.serial);
-	return NULL;
+	outptr = ptr + size;
+	return false;
 }
 
 /*
@@ -346,8 +368,8 @@ int scubapro_asd_import(struct memblock *mem, struct dive_table *divetable, stru
 	do {
 		struct dive *asd_dive = alloc_dive();
 		dive_count++;
-		runner = asd_dive_parser(runner, asd_dive, sites, mem->buffer + mem->size);
-		if (runner == NULL) {
+		if (! asd_dive_parser(runner, runner, asd_dive, sites, mem->buffer + mem->size)){
+		/*if (runner == NULL) {*/
 			fprintf(stderr, "Error parsing dive %d\n", dive_count);
 			free(asd_dive);
 		} else {
