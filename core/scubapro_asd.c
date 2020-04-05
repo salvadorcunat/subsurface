@@ -120,9 +120,9 @@ static int prepare_data(int data_model, dc_family_t dc_fam, device_data_t *dev_d
 	if (dev_data->descriptor) {
 		dev_data->vendor = dc_descriptor_get_vendor(dev_data->descriptor);
 		dev_data->product = dc_descriptor_get_product(dev_data->descriptor);
-		dev_data->model = add_to_string(dev_data->model, "%s %s", dev_data->vendor, dev_data->product);
+		dev_data->model = add_to_string_w_sep(NULL, "", "%s %s", dev_data->vendor, dev_data->product);
 #ifdef DEBUG
-	fprintf(stderr, "dc model = %2x\n", data_model);
+	fprintf(stderr, "dc model = 0x%2x %s\n", data_model, dev_data->model);
 #endif
 		return DC_STATUS_SUCCESS;
 	} else {
@@ -143,7 +143,7 @@ unsigned char *build_dc_data(int model, unsigned char *input, int max, int *out_
 	unsigned char *ptr = input, *buffer, head_begin[] = {0xa5, 0xa5, 0x5a, 0x5a};
 	int buf_size = 0;
 
-	buf_size = ((ptr[1] << 8) + ptr[0]); 	// get the size of the data for libdivecomputer
+	buf_size = ((ptr[1] << 8) + ptr[0]);	// get the size of the data for libdivecomputer
 	buffer =  calloc(buf_size, 1);
 	*out_size = buf_size;
 	memcpy(buffer, &head_begin, 4);		// place header begining
@@ -268,7 +268,7 @@ static bool asd_dive_parser(unsigned char *input, unsigned char *outptr, struct 
 		goto bailout;
 
 	dc_serial = (ptr[3] << 24) + (ptr[2] << 16) + (ptr[1] << 8) + ptr[0];
-	sprintf(asd_dive->dc.serial, "%ld", dc_serial);
+	sprintf((char *)asd_dive->dc.serial, "%ld", dc_serial);
 	rc = prepare_data(dc_model, DC_FAMILY_UWATEC_MERIDIAN, devdata);
 	asd_dive->dc.model = devdata->model;
 	if (rc != DC_STATUS_SUCCESS)
@@ -288,12 +288,12 @@ static bool asd_dive_parser(unsigned char *input, unsigned char *outptr, struct 
 	}
 	dc_data = build_dc_data(dc_model, ptr1, size, &tmp);
 	if (dc_data == NULL)
-		goto bailout;				// freed in build_dc_data()
+		goto bailout;
 
 	rc = libdc_buffer_parser(asd_dive, devdata, dc_data, tmp);
 	if (rc != DC_STATUS_SUCCESS)
 		goto bailout;
-	free(dc_data);					// allocated in build_dc_data()
+	free(dc_data);
 	free(devdata);
 
 	/*
@@ -320,16 +320,16 @@ static bool asd_dive_parser(unsigned char *input, unsigned char *outptr, struct 
 	add_cloned_weightsystem(&asd_dive->weightsystems, ws);
 	ptr += 4;
 	taglist_add_tag(&asd_dive->tag_list, asd_to_string(ptr, &ptr));
+	asd_to_string(ptr, &ptr);		// 3 unknown fields, always 0x0020
 	asd_to_string(ptr, &ptr);
 	asd_to_string(ptr, &ptr);
-	asd_to_string(ptr, &ptr);
-	ptr += 6;  //*
+	ptr += 6;				// 6 unknown bytes, always 0
 	asd_dive->notes = asd_to_string(ptr, &ptr);
 	outptr = ptr;
 	return true;
 bailout:
 	free(devdata);
-	free(asd_dive->dc.serial);
+	free((void *)asd_dive->dc.serial);
 	outptr = ptr + size;
 	return false;
 }
@@ -369,7 +369,6 @@ int scubapro_asd_import(struct memblock *mem, struct dive_table *divetable, stru
 		struct dive *asd_dive = alloc_dive();
 		dive_count++;
 		if (! asd_dive_parser(runner, runner, asd_dive, sites, mem->buffer + mem->size)){
-		/*if (runner == NULL) {*/
 			fprintf(stderr, "Error parsing dive %d\n", dive_count);
 			free(asd_dive);
 		} else {
