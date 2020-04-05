@@ -5,77 +5,53 @@
 #include "core/settings/qPrefDisplay.h"
 #include <QFontInfo>
 
-QColor themeInterface::m_backgroundColor;
-QColor themeInterface::m_contrastAccentColor;
-QColor themeInterface::m_darkerPrimaryColor;
-QColor themeInterface::m_darkerPrimaryTextColor;
-QColor themeInterface::m_drawerColor;
-QColor themeInterface::m_lightDrawerColor;
-QColor themeInterface::m_lightPrimaryColor;
-QColor themeInterface::m_lightPrimaryTextColor;
-QColor themeInterface::m_primaryColor;
-QColor themeInterface::m_primaryTextColor;
-QColor themeInterface::m_secondaryTextColor;
-QColor themeInterface::m_textColor;
+static const QColor BLUE_BACKGROUND_COLOR = "#eff0f1";
+static const QColor BLUE_CONTRAST_ACCENT_COLOR = "#FF5722";
+static const QColor BLUE_DARKER_PRIMARY_COLOR = "#303F9f";
+static const QColor BLUE_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
+static const QColor BLUE_DRAWER_COLOR = "#FFFFFF";
+static const QColor BLUE_LIGHT_DRAWER_COLOR = "#FFFFFF";
+static const QColor BLUE_LIGHT_PRIMARY_COLOR = "#C5CAE9";
+static const QColor BLUE_LIGHT_PRIMARY_TEXT_COLOR = "#212121";
+static const QColor BLUE_PRIMARY_COLOR = "#3F51B5";
+static const QColor BLUE_PRIMARY_TEXT_COLOR = "#FFFFFF";
+static const QColor BLUE_SECONDARY_TEXT_COLOR = "#757575";
+static const QColor BLUE_TEXT_COLOR = "#212121";
 
-double themeInterface::m_basePointSize;
-double themeInterface::m_headingPointSize;
-double themeInterface::m_regularPointSize;
-double themeInterface::m_smallPointSize;
-double themeInterface::m_titlePointSize;
+static const QColor PINK_BACKGROUND_COLOR = "#eff0f1";
+static const QColor PINK_CONTRAST_ACCENT_COLOR = "#FF5722";
+static const QColor PINK_DARKER_PRIMARY_COLOR = "#C2185B";
+static const QColor PINK_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
+static const QColor PINK_DRAWER_COLOR = "#FFFFFF";
+static const QColor PINK_LIGHT_DRAWER_COLOR = "#FFFFFF";
+static const QColor PINK_LIGHT_PRIMARY_COLOR = "#FFDDF4";
+static const QColor PINK_LIGHT_PRIMARY_TEXT_COLOR = "#212121";
+static const QColor PINK_PRIMARY_COLOR = "#FF69B4";
+static const QColor PINK_PRIMARY_TEXT_COLOR = "#212121";
+static const QColor PINK_SECONDARY_TEXT_COLOR = "#757575";
+static const QColor PINK_TEXT_COLOR = "#212121";
 
-QString themeInterface::m_currentTheme;
+static const QColor DARK_BACKGROUND_COLOR = "#303030";
+static const QColor DARK_CONTRAST_ACCENT_COLOR = "#FF5722";
+static const QColor DARK_DARKER_PRIMARY_COLOR = "#303F9f";
+static const QColor DARK_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
+static const QColor DARK_DRAWER_COLOR = "#424242";
+static const QColor DARK_LIGHT_DRAWER_COLOR = "#FFFFFF";
+static const QColor DARK_LIGHT_PRIMARY_COLOR = "#C5CAE9";
+static const QColor DARK_LIGHT_PRIMARY_TEXT_COLOR = "#ECECEC";
+static const QColor DARK_PRIMARY_COLOR = "#3F51B5";
+static const QColor DARK_PRIMARY_TEXT_COLOR = "#ECECEC";
+static const QColor DARK_SECONDARY_TEXT_COLOR = "#757575";
+static const QColor DARK_TEXT_COLOR = "#ECECEC";
 
-const QColor BLUE_BACKGROUND_COLOR = "#eff0f1";
-const QColor BLUE_CONTRAST_ACCENT_COLOR = "#FF5722";
-const QColor BLUE_DARKER_PRIMARY_COLOR = "#303F9f";
-const QColor BLUE_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
-const QColor BLUE_DRAWER_COLOR = "#FFFFFF";
-const QColor BLUE_LIGHT_DRAWER_COLOR = "#FFFFFF";
-const QColor BLUE_LIGHT_PRIMARY_COLOR = "#C5CAE9";
-const QColor BLUE_LIGHT_PRIMARY_TEXT_COLOR = "#212121";
-const QColor BLUE_PRIMARY_COLOR = "#3F51B5";
-const QColor BLUE_PRIMARY_TEXT_COLOR = "#FFFFFF";
-const QColor BLUE_SECONDARY_TEXT_COLOR = "#757575";
-const QColor BLUE_TEXT_COLOR = "#212121";
-
-const QColor PINK_BACKGROUND_COLOR = "#eff0f1";
-const QColor PINK_CONTRAST_ACCENT_COLOR = "#FF5722";
-const QColor PINK_DARKER_PRIMARY_COLOR = "#C2185B";
-const QColor PINK_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
-const QColor PINK_DRAWER_COLOR = "#FFFFFF";
-const QColor PINK_LIGHT_DRAWER_COLOR = "#FFFFFF";
-const QColor PINK_LIGHT_PRIMARY_COLOR = "#FFDDF4";
-const QColor PINK_LIGHT_PRIMARY_TEXT_COLOR = "#212121";
-const QColor PINK_PRIMARY_COLOR = "#FF69B4";
-const QColor PINK_PRIMARY_TEXT_COLOR = "#212121";
-const QColor PINK_SECONDARY_TEXT_COLOR = "#757575";
-const QColor PINK_TEXT_COLOR = "#212121";
-
-const QColor DARK_BACKGROUND_COLOR = "#303030";
-const QColor DARK_CONTRAST_ACCENT_COLOR = "#FF5722";
-const QColor DARK_DARKER_PRIMARY_COLOR = "#303F9f";
-const QColor DARK_DARKER_PRIMARY_TEXT_COLOR = "#ECECEC";
-const QColor DARK_DRAWER_COLOR = "#424242";
-const QColor DARK_LIGHT_DRAWER_COLOR = "#FFFFFF";
-const QColor DARK_LIGHT_PRIMARY_COLOR = "#C5CAE9";
-const QColor DARK_LIGHT_PRIMARY_TEXT_COLOR = "#ECECEC";
-const QColor DARK_PRIMARY_COLOR = "#3F51B5";
-const QColor DARK_PRIMARY_TEXT_COLOR = "#ECECEC";
-const QColor DARK_SECONDARY_TEXT_COLOR = "#757575";
-const QColor DARK_TEXT_COLOR = "#ECECEC";
-
-themeInterface *themeInterface::instance()
+ThemeInterface *ThemeInterface::instance()
 {
-	static themeInterface *self = new themeInterface;
+	static ThemeInterface *self = new ThemeInterface;
 	return self;
 }
 
-void themeInterface::setup(QQmlContext *ct)
+ThemeInterface::ThemeInterface()
 {
-	// Register interface class
-	ct->setContextProperty("subsurfaceTheme", instance());
-
 	// get current theme
 	m_currentTheme = qPrefDisplay::theme();
 	update_theme();
@@ -88,43 +64,44 @@ void themeInterface::setup(QQmlContext *ct)
 	set_currentScale(qPrefDisplay::mobile_scale());
 }
 
-void themeInterface::set_currentTheme(const QString &theme)
+void ThemeInterface::set_currentTheme(const QString &theme)
 {
 	m_currentTheme = theme;
 	qPrefDisplay::set_theme(m_currentTheme);
-	instance()->update_theme();
-	emit instance()->currentThemeChanged(theme);
+	update_theme();
+	emit currentThemeChanged();
 }
 
-double themeInterface::currentScale()
+double ThemeInterface::currentScale()
 {
 	return qPrefDisplay::mobile_scale();
 }
-void themeInterface::set_currentScale(double newScale)
+
+void ThemeInterface::set_currentScale(double newScale)
 {
 	if (newScale != qPrefDisplay::mobile_scale()) {
 		qPrefDisplay::set_mobile_scale(newScale);
-		emit instance()->currentScaleChanged(qPrefDisplay::mobile_scale());
+		emit currentScaleChanged();
 	}
 
 	// Set current font size
-	defaultModelFont().setPointSize(m_basePointSize * qPrefDisplay::mobile_scale());
+	defaultModelFont().setPointSizeF(m_basePointSize * qPrefDisplay::mobile_scale());
 
 	// adjust all used font sizes
 	m_regularPointSize = m_basePointSize * qPrefDisplay::mobile_scale();
-	emit instance()->regularPointSizeChanged(m_regularPointSize);
+	emit regularPointSizeChanged();
 
 	m_headingPointSize = m_regularPointSize * 1.2;
-	emit instance()->headingPointSizeChanged(m_headingPointSize);
+	emit headingPointSizeChanged();
 
 	m_smallPointSize = m_regularPointSize * 0.8;
-	emit instance()->smallPointSizeChanged(m_smallPointSize);
+	emit smallPointSizeChanged();
 
 	m_titlePointSize = m_regularPointSize * 1.5;
-	emit instance()->titlePointSizeChanged(m_titlePointSize);
+	emit titlePointSizeChanged();
 }
 
-void themeInterface::update_theme()
+void ThemeInterface::update_theme()
 {
 	if (m_currentTheme == "Blue") {
 		m_backgroundColor = BLUE_BACKGROUND_COLOR;
@@ -166,16 +143,16 @@ void themeInterface::update_theme()
 		m_secondaryTextColor = DARK_SECONDARY_TEXT_COLOR;
 		m_textColor = DARK_TEXT_COLOR;
 	}
-	emit instance()->backgroundColorChanged(m_backgroundColor);
-	emit instance()->contrastAccentColorChanged(m_contrastAccentColor);
-	emit instance()->darkerPrimaryColorChanged(m_darkerPrimaryColor);
-	emit instance()->darkerPrimaryTextColorChanged(m_darkerPrimaryTextColor);
-	emit instance()->drawerColorChanged(m_drawerColor);
-	emit instance()->lightDrawerColorChanged(m_lightDrawerColor);
-	emit instance()->lightPrimaryColorChanged(m_lightPrimaryColor);
-	emit instance()->lightPrimaryTextColorChanged(m_lightPrimaryTextColor);
-	emit instance()->primaryColorChanged(m_primaryColor);
-	emit instance()->primaryTextColorChanged(m_primaryTextColor);
-	emit instance()->secondaryTextColorChanged(m_secondaryTextColor);
-	emit instance()->textColorChanged(m_textColor);
+	emit backgroundColorChanged();
+	emit contrastAccentColorChanged();
+	emit darkerPrimaryColorChanged();
+	emit darkerPrimaryTextColorChanged();
+	emit drawerColorChanged();
+	emit lightDrawerColorChanged();
+	emit lightPrimaryColorChanged();
+	emit lightPrimaryTextColorChanged();
+	emit primaryColorChanged();
+	emit primaryTextColorChanged();
+	emit secondaryTextColorChanged();
+	emit textColorChanged();
 }

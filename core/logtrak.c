@@ -592,10 +592,13 @@ int logtrak_import(struct memblock *mem, struct dive_table *table)
 				lt_dive->airtemp.mkelvin = C_to_mkelvin(strtod(ltd_airtemp, NULL) / 10);
 			S_FREE(ltd_airtemp);
 
-			/* Get suit and weight */
+			/* Get suit and weight, suit may be freely edited field */
 			t_str = get_line_by_id((char *)mem->buffer, "T_EQUIPMENT", ltd_ref_eq);
 			if (t_str && *t_str){
-				sscanf(t_str, "%*m[0-9],%*m[0-9a-zA-Z'],%m[0-9a-zA-Z'],%f", &p_suit, &p_weight);
+				strend = strstr(t_str, ",'");
+				strend += 2;
+				strend = get_lt_string(strend, &p_suit);
+				sscanf(strend,"%f)", &p_weight);
 				free(t_str);
 			}
 			lt_dive->suit = lt_process_string(p_suit);

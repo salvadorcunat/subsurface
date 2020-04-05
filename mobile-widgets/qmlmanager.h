@@ -9,7 +9,6 @@
 #include <QElapsedTimer>
 #include <QColor>
 #include <QFile>
-#include <QMutex>
 
 #include "core/btdiscovery.h"
 #include "core/gpslocation.h"
@@ -58,6 +57,8 @@ class QMLManager : public QObject {
 	Q_PROPERTY(qPrefCloudStorage::cloud_status oldStatus MEMBER m_oldStatus WRITE setOldStatus NOTIFY oldStatusChanged)
 	Q_PROPERTY(QString undoText READ getUndoText NOTIFY undoTextChanged) // this is a read-only property
 	Q_PROPERTY(QString redoText READ getRedoText NOTIFY redoTextChanged) // this is a read-only property
+	Q_PROPERTY(bool diveListProcessing MEMBER m_diveListProcessing  WRITE setDiveListProcessing NOTIFY diveListProcessingChanged)
+	Q_PROPERTY(bool initialized MEMBER m_initialized NOTIFY initializedChanged)
 
 public:
 	QMLManager();
@@ -131,7 +132,6 @@ public:
 	bool verboseEnabled() const;
 	void setVerboseEnabled(bool verboseMode);
 
-	bool loadFromCloud() const;
 	void setLoadFromCloud(bool done);
 	void syncLoadFromCloud();
 
@@ -151,6 +151,10 @@ public:
 	void setBtEnabled(bool value);
 
 	void setShowNonDiveComputers(bool show);
+	qreal lastDevicePixelRatio();
+	void setDevicePixelRatio(qreal dpr, QScreen *screen);
+
+	void setDiveListProcessing(bool value);
 
 	QStringList suitList() const;
 	QStringList buddyList() const;
@@ -166,12 +170,12 @@ public:
 #endif
 	qPrefCloudStorage::cloud_status oldStatus() const;
 	void setOldStatus(const qPrefCloudStorage::cloud_status value);
+	void rememberOldStatus();
 
 public slots:
 	void appInitialized();
 	void applicationStateChanged(Qt::ApplicationState state);
 	void saveCloudCredentials(const QString &email, const QString &password, const QString &pin);
-	void loadDivesWithValidCredentials();
 	void commitChanges(QString diveId, QString number, QString date, QString location, QString gps,
 			   QString duration, QString depth, QString airtemp,
 			   QString watertemp, QString suit, QString buddy,
@@ -183,7 +187,6 @@ public slots:
 	void addDiveToTrip(int id, int tripId);
 	void changesNeedSaving();
 	void openNoCloudRepo();
-	void saveChangesLocal();
 	void saveChangesCloud(bool forceRemoteSync);
 	void selectDive(int id);
 	void deleteDive(int id);
@@ -211,20 +214,14 @@ public slots:
 	void copyAppLogToClipboard();
 	bool createSupportEmail();
 	void finishSetup();
-	void openLocalThenRemote(QString url);
-	void mergeLocalRepo();
 	QString getNumber(const QString& diveId);
 	QString getDate(const QString& diveId);
 	QString getCurrentPosition();
 	QString getGpsFromSiteName(const QString& siteName);
 	QString getVersion() const;
 	void deleteGpsFix(quint64 when);
-	void revertToNoCloudIfNeeded();
-	void consumeFinishedLoad();
 	void refreshDiveList();
 	void screenChanged(QScreen *screen);
-	qreal lastDevicePixelRatio();
-	void setDevicePixelRatio(qreal dpr, QScreen *screen);
 	void appendTextToLog(const QString &newText);
 	void quit();
 	void hasLocationSourceChanged();
@@ -250,20 +247,19 @@ private:
 	bool m_locationServiceEnabled;
 	bool m_locationServiceAvailable;
 	bool m_verboseEnabled;
+	bool m_diveListProcessing;
+	bool m_initialized;
 	GpsLocation *locationProvider;
 	bool m_loadFromCloud;
 	static QMLManager *m_instance;
 	QString m_notificationText;
 	qreal m_lastDevicePixelRatio;
 	QElapsedTimer timer;
-	QMutex alreadySaving;
 	bool checkDate(const DiveObjectHelper &myDive, struct dive *d, QString date);
 	bool checkLocation(DiveSiteChange &change, const DiveObjectHelper &myDive, struct dive *d, QString location, QString gps);
 	bool checkDuration(const DiveObjectHelper &myDive, struct dive *d, QString duration);
 	bool checkDepth(const DiveObjectHelper &myDive, struct dive *d, QString depth);
-	int openAndMaybeSync(const char *filename);
 	bool currentGitLocalOnly;
-	Q_INVOKABLE DCDeviceData *m_device_data;
 	QString m_progressMessage;
 	bool m_btEnabled;
 	void updateAllGlobalLists();
@@ -276,6 +272,12 @@ private:
 	QAction *undoAction;
 
 	bool verifyCredentials(QString email, QString password, QString pin);
+	void loadDivesWithValidCredentials();
+	void revertToNoCloudIfNeeded();
+	void consumeFinishedLoad();
+	void mergeLocalRepo();
+	void openLocalThenRemote(QString url);
+	void saveChangesLocal();
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
 	QString appLogFileName;
@@ -288,6 +290,8 @@ signals:
 	void locationServiceEnabledChanged();
 	void locationServiceAvailableChanged();
 	void verboseEnabledChanged();
+	void diveListProcessingChanged();
+	void initializedChanged();
 	void logTextChanged();
 	void loadFromCloudChanged();
 	void startPageTextChanged();

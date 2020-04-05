@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <QQmlEngine>
-#include <QDebug>
 #include <QQuickItem>
 
 #include "map-widget/qmlmapwidgethelper.h"
@@ -34,7 +33,6 @@ QString getAndroidHWInfo(); // from android.cpp
 #include <QFontDatabase>
 #endif /* Q_OS_ANDROID */
 
-#ifndef SUBSURFACE_TEST_DATA
 QObject *qqWindowObject = NULL;
 
 // Forward declaration
@@ -80,6 +78,10 @@ void run_ui()
 	QScreen *appScreen = QApplication::screens().at(0);
 	int availableScreenWidth = appScreen->availableSize().width();
 	QQmlApplicationEngine engine;
+	QQmlContext *ctxt = engine.rootContext();
+
+	// Register qml interface classes
+	QMLInterface::setup(ctxt);
 	register_qml_types(&engine);
 	KirigamiPlugin::getInstance().registerTypes();
 #if defined(__APPLE__) && !defined(Q_OS_IOS)
@@ -101,7 +103,6 @@ void run_ui()
 	gpsSortModel->setDynamicSortFilter(true);
 	gpsSortModel->setSortRole(GpsListModel::GpsWhenRole);
 	gpsSortModel->sort(0, Qt::DescendingOrder);
-	QQmlContext *ctxt = engine.rootContext();
 	ctxt->setContextProperty("gpsModel", gpsSortModel);
 	ctxt->setContextProperty("vendorList", vendorList);
 	ctxt->setContextProperty("swipeModel", MobileModels::instance()->swipeModel());
@@ -110,6 +111,7 @@ void run_ui()
 
 	ctxt->setContextProperty("connectionListModel", &connectionListModel);
 	ctxt->setContextProperty("logModel", MessageHandlerModel::self());
+	ctxt->setContextProperty("subsurfaceTheme", ThemeInterface::instance());
 
 	qmlRegisterUncreatableType<QMLManager>("org.subsurfacedivelog.mobile",1,0,"ExportType","Enum is not a type");
 
@@ -178,37 +180,26 @@ static void register_meta_types()
 {
 	qRegisterMetaType<duration_t>();
 }
-#endif // not SUBSURFACE_TEST_DATA
 
-#define REGISTER_TYPE(useClass, useQML) \
-	rc = qmlRegisterType<useClass>("org.subsurfacedivelog.mobile", 1, 0, useQML); \
-	if (rc < 0) \
-		qWarning() << "ERROR: Cannot register " << useQML << ", QML will not work!!";
+template <typename T>
+static void register_qml_type(const char *name)
+{
+	if(qmlRegisterType<T>("org.subsurfacedivelog.mobile", 1, 0, name) < 0)
+		qWarning("ERROR: Cannot register %s, QML will not work!!", name);
+}
 
-void register_qml_types(QQmlEngine *engine)
+static void register_qml_types(QQmlEngine *engine)
 {
 	// register qPref*
 	qPref::registerQML(engine);
 
-#ifndef SUBSURFACE_TEST_DATA
-	int rc;
-
 #ifdef SUBSURFACE_MOBILE
-	if (engine != NULL) {
-		QQmlContext *ct = engine->rootContext();
-
-		// Register qml interface classes
-		QMLInterface::setup(ct);
-		themeInterface::setup(ct);
-	}
-
-	REGISTER_TYPE(QMLManager, "QMLManager");
-	REGISTER_TYPE(QMLProfile, "QMLProfile");
-	REGISTER_TYPE(DiveImportedModel, "DCImportModel");
-	REGISTER_TYPE(DiveSummaryModel, "DiveSummaryModel");
+	register_qml_type<QMLManager>("QMLManager");
+	register_qml_type<QMLProfile>("QMLProfile");
+	register_qml_type<DiveImportedModel>("DCImportModel");
+	register_qml_type<DiveSummaryModel>("DiveSummaryModel");
 #endif // not SUBSURFACE_MOBILE
 
-	REGISTER_TYPE(MapWidgetHelper, "MapWidgetHelper");
-	REGISTER_TYPE(MapLocationModel, "MapLocationModel");
-#endif // not SUBSURFACE_TEST_DATA
+	register_qml_type<MapWidgetHelper>("MapWidgetHelper");
+	register_qml_type<MapLocationModel>("MapLocationModel");
 }

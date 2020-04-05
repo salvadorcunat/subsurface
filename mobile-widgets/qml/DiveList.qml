@@ -13,7 +13,7 @@ Kirigami.ScrollablePage {
 	title: qsTr("Dive list")
 	verticalScrollBarPolicy: Qt.ScrollBarAlwaysOff
 	property int horizontalPadding: Kirigami.Units.gridUnit / 2 - Kirigami.Units.smallSpacing  + 1
-	property QtObject diveListModel: diveModel
+	property QtObject diveListModel: null
 
 	supportsRefreshing: true
 	onRefreshingChanged: {
@@ -37,6 +37,7 @@ Kirigami.ScrollablePage {
 			property variant myData: model
 			property var view: ListView.view
 			property bool selected: !isTrip && current // don't use 'checked' for this as that confuses QML as it tries
+			property bool invalid: isInvalid === true
 			id: diveOrTripDelegateItem
 			padding: 0
 			supportsMouseEvents: true
@@ -182,7 +183,7 @@ Kirigami.ScrollablePage {
 								id: locationText
 								text: (undefined !== location && "" != location) ? location : qsTr("<unnamed dive site>")
 								font.weight: Font.Medium
-								font.strikeout: isInvalid
+								font.strikeout: invalid
 								font.pointSize: subsurfaceTheme.smallPointSize
 								elide: Text.ElideRight
 								maximumLineCount: 1 // needed for elide to work at all
@@ -207,7 +208,7 @@ Kirigami.ScrollablePage {
 									text: (undefined !== dateTime) ? dateTime : ""
 									width: Math.max(locationText.width * 0.45, paintedWidth) // helps vertical alignment throughout listview
 									font.pointSize: subsurfaceTheme.smallPointSize
-									font.strikeout: isInvalid
+									font.strikeout: invalid
 									color: selected ? subsurfaceTheme.darkerPrimaryTextColor : subsurfaceTheme.secondaryTextColor
 								}
 								// spacer, just in case
@@ -220,7 +221,7 @@ Kirigami.ScrollablePage {
 									text: (undefined !== depthDuration) ? depthDuration : ""
 									width: Math.max(Kirigami.Units.gridUnit * 3, paintedWidth) // helps vertical alignment throughout listview
 									font.pointSize: subsurfaceTheme.smallPointSize
-									font.strikeout: isInvalid
+									font.strikeout: invalid
 									color: selected ? subsurfaceTheme.darkerPrimaryTextColor : subsurfaceTheme.secondaryTextColor
 								}
 							}
@@ -228,7 +229,7 @@ Kirigami.ScrollablePage {
 								id: numberText
 								text: "#" + number
 								font.pointSize: subsurfaceTheme.smallPointSize
-								font.strikeout: isInvalid
+								font.strikeout: invalid
 								color: selected ? subsurfaceTheme.darkerPrimaryTextColor : subsurfaceTheme.secondaryTextColor
 								anchors {
 									right: parent.right
@@ -346,107 +347,109 @@ Kirigami.ScrollablePage {
 	}
 
 	Controls.Label {
+		property bool showProcessingText: manager.diveListProcessing
 		anchors.fill: parent
 		horizontalAlignment: Text.AlignHCenter
 		verticalAlignment: Text.AlignVCenter
-		text: diveListModel ? qsTr("No dives in dive list") : qsTr("Please wait, updating the dive list")
+		text: diveListModel && !showProcessingText ? qsTr("No dives in dive list") : qsTr("Please wait, updating the dive list")
 		visible: diveListView.visible && diveListView.count === 0
-	}
-
-	Component {
-		id: filterHeader
-		Rectangle {
-			id: filterRectangle
-			visible: filterBar.height > 0
-			implicitHeight: filterBar.implicitHeight
-			implicitWidth: filterBar.implicitWidth
-			height: filterBar.height
-			anchors.left: parent.left
-			anchors.right: parent.right
-			color: subsurfaceTheme.backgroundColor
-			enabled: rootItem.filterToggle
-			RowLayout {
-				id: filterBar
-				z: 5 //make sure it sits on top
-				states: [
-					State {
-						name: "isVisible"
-						when: rootItem.filterToggle
-						PropertyChanges { target: filterBar; height: sitefilter.implicitHeight }
-					},
-					State {
-						name: "isHidden"
-						when: !rootItem.filterToggle
-						PropertyChanges { target: filterBar; height: 0 }
-					}
-
-				]
-				transitions: [
-					Transition { NumberAnimation { property: "height"; duration: 400; easing.type: Easing.InOutQuad }}
-				]
-				anchors.left: parent.left
-				anchors.right: parent.right
-				anchors.leftMargin: Kirigami.Units.gridUnit / 2
-				anchors.rightMargin: Kirigami.Units.gridUnit / 2
-				TemplateComboBox {
-					id: sitefilterMode
-					editable: false
-					model: ListModel {
-						ListElement {text: qsTr("Fulltext")}
-						ListElement {text: qsTr("People")}
-						ListElement {text: qsTr("Tags")}
-					}
-					font.pointSize: subsurfaceTheme.smallPointSize
-					Layout.preferredWidth: parent.width * 0.2
-					Layout.maximumWidth: parent.width * 0.3
-					onActivated:  {
-						manager.setFilter(sitefilter.text, currentIndex)
-					}
-				}
-				Controls.TextField  {
-					id: sitefilter
-					z: 10
-					verticalAlignment: TextInput.AlignVCenter
-					Layout.fillWidth: true
-					text: ""
-					placeholderText: sitefilterMode.currentText
-					onAccepted: {
-						manager.setFilter(text, sitefilterMode.currentIndex)
-					}
-					onEnabledChanged: {
-						// reset the filter when it gets toggled
-						text = ""
-						if (visible) {
-							forceActiveFocus()
-						}
-					}
-				}
-				Controls.Label {
-					id: numShown
-					z: 10
-					verticalAlignment: Text.AlignVCenter
-					text: diveModel.shown
-				}
-			}
+		onShowProcessingTextChanged: {
+			manager.appendTextToLog("============diveListProcessing is " + showProcessingText)
 		}
 	}
 
+	Rectangle {
+		id: filterHeader
+		visible: filterBar.height > 0
+		implicitHeight: filterBar.implicitHeight
+		implicitWidth: filterBar.implicitWidth
+		height: filterBar.height
+		anchors {
+			top: parent.top
+			left: parent.left
+			right: parent.right
+		}
+		color: subsurfaceTheme.backgroundColor
+		enabled: rootItem.filterToggle
+		RowLayout {
+			id: filterBar
+			states: [
+				State {
+					name: "isVisible"
+					when: rootItem.filterToggle
+					PropertyChanges { target: filterBar; height: sitefilter.implicitHeight }
+				},
+				State {
+					name: "isHidden"
+					when: !rootItem.filterToggle
+					PropertyChanges { target: filterBar; height: 0 }
+				}
+			]
+			transitions: [
+				Transition { NumberAnimation { property: "height"; duration: 400; easing.type: Easing.InOutQuad }}
+			]
+			anchors.left: parent.left
+			anchors.right: parent.right
+			anchors.leftMargin: Kirigami.Units.gridUnit / 2
+			anchors.rightMargin: Kirigami.Units.gridUnit / 2
+			TemplateComboBox {
+				visible: filterBar.height === sitefilter.implicitHeight
+				id: sitefilterMode
+				editable: false
+				model: ListModel {
+					ListElement {text: qsTr("Fulltext")}
+					ListElement {text: qsTr("People")}
+					ListElement {text: qsTr("Tags")}
+				}
+				font.pointSize: subsurfaceTheme.smallPointSize
+				Layout.preferredWidth: parent.width * 0.2
+				Layout.maximumWidth: parent.width * 0.3
+				onActivated:  {
+					manager.setFilter(sitefilter.text, currentIndex)
+				}
+			}
+			Controls.TextField  {
+				id: sitefilter
+				verticalAlignment: TextInput.AlignVCenter
+				Layout.fillWidth: true
+				text: ""
+				placeholderText: sitefilterMode.currentText
+				onAccepted: {
+					manager.setFilter(text, sitefilterMode.currentIndex)
+				}
+				onVisibleChanged: {
+					// reset the filter when it gets toggled
+					text = ""
+					if (visible) {
+						forceActiveFocus()
+					}
+				}
+			}
+			Controls.Label {
+				id: numShown
+				verticalAlignment: Text.AlignVCenter
+				text: diveModel.shown
+			}
+		}
+	}
 	ListView {
 		id: diveListView
+		topMargin: filterHeader.height
 		anchors.fill: parent
 		model: diveListModel
 		currentIndex: -1
 		delegate: diveOrTripDelegate
-		header: filterHeader
-		headerPositioning: ListView.OverlayHeader
 		boundsBehavior: Flickable.DragOverBounds
 		maximumFlickVelocity: parent.height * 5
 		bottomMargin: Kirigami.Units.iconSizes.medium + Kirigami.Units.gridUnit
-		cacheBuffer: 40 // this will increase memory use, but should help with scrolling
+		cacheBuffer: 0
 		Component.onCompleted: {
 			manager.appendTextToLog("finished setting up the diveListView")
 		}
-		onVisibleChanged: setupActions()
+		onVisibleChanged: {
+			if (visible)
+				setupActions()
+		}
 	}
 
 	property QtObject downloadFromDCAction: Kirigami.Action {
@@ -478,6 +481,10 @@ Kirigami.ScrollablePage {
 		onTriggered: {
 			rootItem.filterToggle = !rootItem.filterToggle
 			manager.setFilter("", 0)
+			if (rootItem.filterToggle)
+				Qt.inputMethod.show()
+			else
+				Qt.inputMethod.hide()
 		}
 	}
 
@@ -488,7 +495,15 @@ Kirigami.ScrollablePage {
 			event.accepted = true;
 		}
 		if (!startPage.visible) {
-			if (Qt.platform.os != "ios") {
+			if (globalDrawer.visible) {
+				globalDrawer.close()
+				event.accepted = true
+			}
+			if (contextDrawer.visible) {
+				contextDrawer.close()
+				event.accepted = true
+			}
+			if (event.accepted === false && Qt.platform.os !== "ios") {
 				manager.quit()
 			}
 			// let's make sure Kirigami doesn't quit on our behalf

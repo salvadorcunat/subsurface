@@ -90,9 +90,12 @@ Kirigami.Page {
 		text: qsTr("Create trip with dive")
 		icon { name: ":/icons/list-add" }
 		enabled: currentItem && currentItem.modelData && !currentItem.modelData.isTrip && currentItem.modelData.isTopLevel
-		onTriggered: {
-			manager.addTripForDive(currentItem.myData.id)
-		}
+		onTriggered: manager.addTripForDive(currentItem.modelData.id)
+	}
+	property QtObject toggleInvalidAction: Kirigami.Action {
+		text: currentItem && currentItem.modelData && currentItem.modelData.isInvalid ? qsTr("Mark dive as valid") : qsTr("Mark dive as invalid")
+		visible: currentItem && currentItem.modelData
+		onTriggered: manager.toggleDiveInvalid(currentItem.modelData.id)
 	}
 	property QtObject undoAction: Kirigami.Action {
 		text: qsTr("Undo") + " " + manager.undoText
@@ -197,6 +200,23 @@ Kirigami.Page {
 		}
 	]
 
+	Component.onCompleted: {
+		// when we first create this page, we are in "view" mode and shouldn't show
+		// a virtual keyboard. This should be unnecessary, but in some circumstances,
+		// when the user editied a dive, went back to the dive list, and then tried to
+		// view a different dive, the Android keyboard would pop up
+		Qt.inputMethod.hide()
+	}
+
+	onHeightChanged: {
+		// even with the explicit attempt to hide the keyboard above, it STILL sometimes
+		// pops up when first showing a dive. So let's get more aggressive
+		// QML doesn't let me trigger this based on the visible property of the inputMethod,
+		// but when it becomes visible, the height of the page changes, so let's use that
+		if (Qt.inputMethod.visible && state === "view")
+			Qt.inputMethod.hide()
+	}
+
 	property QtObject deleteAction: Kirigami.Action {
 		text: qsTr("Delete dive")
 		icon {
@@ -244,15 +264,27 @@ Kirigami.Page {
 	}
 
 	onBackRequested: {
-		if (state === "edit") {
-			endEditMode()
-			event.accepted = true;
-		} else if (state === "add") {
-			endEditMode()
-			pageStack.pop()
-			event.accepted = true;
+		// if one of the drawers/menus is open, the back button should close those
+		if (globalDrawer.visible) {
+			globalDrawer.close()
+			event.accepted = true
 		}
-		// if we were in view mode, don't accept the event and pop the page
+		if (contextDrawer.visible) {
+			contextDrawer.close()
+			event.accepted = true
+		}
+		// if we didn't close either of the drawer, check if we need to close add/edit
+		if (event.accepted === false) {
+			if (state === "edit") {
+				endEditMode()
+				event.accepted = true;
+			} else if (state === "add") {
+				endEditMode()
+				pageStack.pop()
+				event.accepted = true;
+			}
+		}
+		// if we were in view mode and no menus are open, don't accept the event and pop the page
 	}
 
 	onCurrentItemChanged: {
