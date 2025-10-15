@@ -228,6 +228,7 @@ void BLEObject::addService(const QBluetoothUuid &newService)
 	details = is_known_serial_service(newService);
 	if (details) {
 		report_info(" .. recognized service %s", details);
+		services.clear();
 	} else {
 		bool isStandardUuid = false;
 
@@ -324,6 +325,13 @@ static bool is_read_characteristic(const QLowEnergyCharacteristic &c)
 dc_status_t BLEObject::write(const void *data, size_t size, size_t *actual)
 {
 	if (actual) *actual = 0;
+
+	if (!receivedPackets.isEmpty()) {
+		report_info(".. write HIT with still incoming packets in queue");
+		do {
+			receivedPackets.takeFirst();
+		} while (!receivedPackets.isEmpty());
+	}
 
 	for (const QLowEnergyCharacteristic &c: preferredService()->characteristics()) {
 		if (!is_write_characteristic(c))
@@ -840,6 +848,12 @@ dc_status_t qt_ble_ioctl(void *io, unsigned int request, void *data, size_t size
 		char *p;
 		p = ((char*)data) +  sizeof(uuid);
 		return ble->read_characteristic(QBluetoothUuid(uuid), p, readsize);
+	case DC_IOCTL_BLE_GET_PINCODE:
+		return ble->get_pincode((char *) data, size);
+	case DC_IOCTL_BLE_GET_ACCESSCODE:
+		return ble->get_accesscode((unsigned char *) data, size);
+	case DC_IOCTL_BLE_SET_ACCESSCODE:
+		return ble->set_accesscode((const unsigned char *) data, size);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}

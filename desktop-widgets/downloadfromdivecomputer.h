@@ -3,6 +3,8 @@
 #define DOWNLOADFROMDIVECOMPUTER_H
 
 #include <QDialog>
+#include <QInputDialog>
+
 #include <QThread>
 #include <QHash>
 #include <QMap>
@@ -73,9 +75,11 @@ private:
 	void markChildrenAsDisabled();
 	void markChildrenAsEnabled();
 	void updateTransportSelection(bool changeSelection);
+	void updateDeviceEnabled();
 	void showRememberedDCs();
 	void checkShowError(states state);
 	void showUpdateDialog();
+	QInputDialog authDialog;
 
 	QStringListModel vendorModel;
 	QStringListModel productModel;

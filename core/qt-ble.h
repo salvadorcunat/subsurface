@@ -32,6 +32,27 @@ public:
 	dc_status_t poll(int timeout);
 	dc_status_t purge(dc_direction_t direction);
 
+	inline dc_status_t get_pincode(char *data, size_t size)
+	{
+		if (!device.auth || !device.auth->func)
+			return DC_STATUS_UNSUPPORTED;
+		device.auth->func((unsigned char *)data, size, device.auth->userdata);
+		return DC_STATUS_SUCCESS;
+	}
+	inline dc_status_t get_accesscode(unsigned char *data, size_t size)
+	{
+		if ((size_t)accesscode.size() == size) {
+			memcpy(data, accesscode.data(), size);
+		} else {
+			memset(data, 0, size);
+		}
+		return DC_STATUS_SUCCESS;
+	}
+	inline dc_status_t set_accesscode(const unsigned char *data, size_t size)
+	{
+		accesscode = QByteArray((const char *)data, size);
+		return DC_STATUS_SUCCESS;
+	}
 	inline QLowEnergyService *preferredService() { return preferred; }
 	inline int descriptorWritten() { return desc_written; }
 	dc_status_t select_preferred_service();
@@ -56,6 +77,7 @@ private:
 	unsigned int desc_written = 0;
 	int timeout;
 
+	QByteArray accesscode;
 	QList<QBluetoothUuid> telit = {
 		QBluetoothUuid(QUuid("{00000001-0000-1000-8000-008025000000}")), // TELIT_DATA_RX
 		QBluetoothUuid(QUuid("{00000002-0000-1000-8000-008025000000}")), // TELIT_DATA_TX

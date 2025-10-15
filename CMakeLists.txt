@@ -578,14 +578,21 @@ target_link_libraries(export-html subsurface_corelib ${SUBSURFACE_LINK_LIBRARIES
 
 # install Subsurface
 # first some variables with files that need installing
-set(DOCFILES
-	README.md
-	ReleaseNotes/ReleaseNotes.txt
-	SupportedDivecomputers.txt
-	${CMAKE_BINARY_DIR}/Documentation/user-manual.html
-	${CMAKE_BINARY_DIR}/Documentation/user-manual_es.html
-	${CMAKE_BINARY_DIR}/Documentation/user-manual_fr.html
-)
+if (NOT NO_DOCS)
+	set(DOCFILES
+		README.md
+		ReleaseNotes/ReleaseNotes.txt
+		SupportedDivecomputers.txt
+	)
+	if (NOT NO_USERMANUAL)
+		set (DOCFILES
+			${DOCFILES}
+			${CMAKE_BINARY_DIR}/Documentation/user-manual.html
+			${CMAKE_BINARY_DIR}/Documentation/user-manual_es.html
+			${CMAKE_BINARY_DIR}/Documentation/user-manual_fr.html
+	)
+	endif()
+endif()
 
 # add all the translations that we may need
 FILE(STRINGS "subsurface_enabled_translations" QTTRANSLATIONS_BASE)
@@ -772,7 +779,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		install(FILES ${DOCFILES} DESTINATION share/subsurface/Documentation)
 	endif()
 	install(DIRECTORY theme DESTINATION share/subsurface)
-	install(DIRECTORY printing_templates DESTINATION share/subsurface)
+	if (NOT NO_PRINTING)
+		install(DIRECTORY printing_templates DESTINATION share/subsurface)
+	endif()
 	install(FILES ${TRANSLATIONS} DESTINATION share/subsurface/translations)
 	install(TARGETS ${SUBSURFACE_TARGET} DESTINATION bin)
 endif()

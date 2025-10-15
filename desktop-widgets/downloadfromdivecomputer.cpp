@@ -19,6 +19,7 @@
 #include <QShortcut>
 #include <QTimer>
 #include <QUndoStack>
+#include <QInputDialog>
 
 static bool is_vendor_searchable(QString vendor)
 {
@@ -26,6 +27,7 @@ static bool is_vendor_searchable(QString vendor)
 }
 
 DownloadFromDCWidget::DownloadFromDCWidget(const QString &filename, QWidget *parent) : QDialog(parent, QFlag(0)),
+	authDialog(this),
 	filename(filename),
 	downloading(false),
 	previousLast(0),
@@ -36,6 +38,7 @@ DownloadFromDCWidget::DownloadFromDCWidget(const QString &filename, QWidget *par
 #endif
 	currentState(INITIAL)
 {
+	authDialog.setObjectName("authDialog");
 	diveImportedModel = new DiveImportedModel(this);
 	vendorModel.setStringList(vendorList);
 	QShortcut *close = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_W), this);
@@ -339,6 +342,8 @@ void DownloadFromDCWidget::updateState(states state)
 		timer->stop();
 
 		checkShowError(state);
+		QMessageBox::critical(this, TITLE_OR_TEXT(tr("Error"),
+					QString::fromStdString(diveImportedModel->thread.error)), QMessageBox::Ok);
 		markChildrenAsEnabled();
 		progress_bar_text.clear();
 		ui.progressBar->hide();
@@ -713,6 +718,10 @@ void DownloadFromDCWidget::markChildrenAsEnabled()
 	ui.chooseDumpFile->setEnabled(true);
 	ui.selectAllButton->setEnabled(true);
 	ui.unselectAllButton->setEnabled(true);
+#if defined(BT_SUPPORT)
+	ui.bluetoothMode->setEnabled(true);
+	ui.chooseBluetoothDevice->setEnabled(true);
+#endif
 	ui.syncDiveComputerTime->setEnabled(true);
 }
 

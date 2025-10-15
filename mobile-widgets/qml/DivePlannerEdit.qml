@@ -33,7 +33,7 @@ TemplatePage {
 		gasNumberModel = newList;
 	}
 
-	function generatePlan(savePlan = false) {
+	function updateLivePlanInfo() {
 		if (visible && segmentListModel.count > 0 && cylinderListModel.count > 0) {
 			var cylinderData = []
 			for (var i = 0; i < cylinderListModel.count; i++) {
@@ -88,21 +88,13 @@ TemplatePage {
 
 			var planResult = Backend.divePlannerPointsModel.calculatePlan(
 				cylinderData, segmentData, planDate.text, planTime.text,
-				diveModeBox.currentIndex, salinity, savePlan
+				diveModeBox.currentIndex, salinity, false
 			)
-			if (savePlan) {
-				var newDiveId = planResult.newDiveId
-				if (newDiveId !== -1) {
-					manager.selectDive(newDiveId)
-					showPage(diveList)
-				}
-			} else {
-				// Handle planResult
-				planNotes = planResult.notes
-				maxDepth = planResult.maxDepth
-				duration = planResult.duration
-				profileData = planResult.profile
-			}
+			// Handle planResult
+			planNotes = planResult.notes
+			maxDepth = planResult.maxDepth
+			duration = planResult.duration
+			profileData = planResult.profile
 		}
 
 
@@ -112,7 +104,7 @@ TemplatePage {
 		// This code runs every time the page becomes visible
 		if (visible) {
 			cylinderTypesModel = manager.cylinderListInit;
-			generatePlan()
+			updateLivePlanInfo()
 		}
 	}
 
@@ -137,25 +129,25 @@ TemplatePage {
 		});
 
 		updateGasNumberList();
-		generatePlan();
+		updateLivePlanInfo();
 	}
 
 	Connections {
 		target: cylinderListModel
 		onRowsInserted: {
 			updateGasNumberList();
-			generatePlan();
+			updateLivePlanInfo();
 		}
 		onRowsRemoved: {
 			updateGasNumberList();
-			generatePlan();
+			updateLivePlanInfo();
 		}
 	}
 
 	Connections {
 		target: rootItem
 		function onSettingsChanged() {
-			generatePlan();
+			updateLivePlanInfo();
 		}
 	}
 
@@ -210,7 +202,7 @@ TemplatePage {
 				model: [qsTr("Sea Water"), qsTr("Fresh Water"), qsTr("EN13319")]
 				currentIndex: 0 // Default to Sea water
 				onCurrentIndexChanged: {
-					generatePlan();
+					updateLivePlanInfo();
 				}
 			}
 		}
@@ -237,7 +229,7 @@ TemplatePage {
 							"pressure": (Backend.pressure === Enums.BAR) ? 200 : 3000,
 							"use": 0 // Default to OC_GAS
 						});
-						generatePlan();
+						updateLivePlanInfo();
 					}
 			}
 		}
@@ -282,7 +274,7 @@ TemplatePage {
 							cylinderListModel.setProperty(parent.index, "type", currentText);
 							
 							// This updates the dive plan summary in real-time
-							generatePlan();
+							updateLivePlanInfo();
 						}
 					}
 				}
@@ -292,7 +284,7 @@ TemplatePage {
 					text: mix
 					onTextChanged: {
 						cylinderListModel.setProperty(index, "mix", text);
-						generatePlan();
+						updateLivePlanInfo();
 					}
 					onEditingFinished: {
 						var parts = text.split('/');
@@ -329,7 +321,7 @@ TemplatePage {
 					validator: IntValidator { bottom: 0; top: 10000 }
 					onTextChanged: {
 						cylinderListModel.setProperty(index, "pressure", Number(text));
-						generatePlan();
+						updateLivePlanInfo();
 					}
 					onActiveFocusChanged: cylinderListView.interactive = !activeFocus
 				}
@@ -340,7 +332,7 @@ TemplatePage {
 					enabled: cylinderListModel.count > 1
 					onClicked: {
 						cylinderListModel.remove(index);
-						generatePlan();
+						updateLivePlanInfo();
 					}
 				}
 			}
@@ -369,7 +361,7 @@ TemplatePage {
 							"duration": 10,
 							"gas": lastSegment.gas
 						});
-						generatePlan();
+						updateLivePlanInfo();
 					}
 				}
 			}
@@ -402,7 +394,7 @@ TemplatePage {
 					validator: IntValidator { bottom: 0; top: 900 }
 					onTextChanged: {
 						segmentListModel.setProperty(index, "depth", Number(text));
-						generatePlan();
+						updateLivePlanInfo();
 					}
 					onActiveFocusChanged: segmentListView.interactive = !activeFocus
 				}
@@ -413,7 +405,7 @@ TemplatePage {
 					validator: IntValidator { bottom: 1; top: 999 }
 					onTextChanged: {
 						segmentListModel.setProperty(index, "duration", Number(text));
-						generatePlan();
+						updateLivePlanInfo();
 					}
 					onActiveFocusChanged: segmentListView.interactive = !activeFocus
 				}
@@ -427,7 +419,7 @@ TemplatePage {
 					onActivated: {
 						if (currentIndex !== -1)
 						   segmentListModel.setProperty(parent.index, "gas", currentIndex)
-						generatePlan();
+						updateLivePlanInfo();
 					}
 				}
 
@@ -438,7 +430,7 @@ TemplatePage {
 					Layout.preferredWidth: Kirigami.Units.gridUnit * 2
 					onClicked: {
 						segmentListModel.remove(index);
-						generatePlan();
+						updateLivePlanInfo();
 					}
 
 				}
@@ -546,7 +538,65 @@ TemplatePage {
 			font.bold: true
 			Layout.fillWidth: true
 			onClicked: {
-				generatePlan(true);
+				var cylinderData = []
+				for (var i = 0; i < cylinderListModel.count; i++) {
+					var item = cylinderListModel.get(i)
+					cylinderData.push({
+											"type": item.type, "mix": item.mix,
+											"pressure": item.pressure, "use": item.use
+										})
+				}
+
+				var segmentData = []
+				var start_index = 0
+				if (Backend.drop_stone_mode && segmentListModel.count > 0) {
+					start_index = 1
+					var descentRate = Backend.descrate;
+					var firstSegment = segmentListModel.get(0)
+					var descentDuration = 1
+					if (descentRate > 0) {
+						descentDuration = Math.ceil(firstSegment.depth / descentRate);
+					}
+					segmentData.push({
+							"depth": firstSegment.depth,
+											"duration": descentDuration,
+											"gas": firstSegment.gas
+										})
+					if (descentDuration < firstSegment.duration) {
+						segmentData.push({
+							"depth": firstSegment.depth, // Stays at the same depth
+							"duration": firstSegment.duration - descentDuration,
+							"gas": firstSegment.gas
+						});
+					}
+				}
+				for (var j = 0; j < segmentListModel.count; j++) {
+					var item = segmentListModel.get(j)
+					segmentData.push({
+										"depth": item.depth,
+										"duration": item.duration,
+										"gas": item.gas
+									})
+				}
+				var salinity = 0
+				if (waterTypeBox.currentIndex == 0) {
+					salinity = 10300;
+				}
+				if (waterTypeBox.currentIndex == 1) {
+					salinity = 10000;
+				}
+				if (waterTypeBox.currentIndex == 2) {
+					salinity = 10200;
+				}
+				var planResult = Backend.divePlannerPointsModel.calculatePlan(
+					cylinderData, segmentData, planDate.text, planTime.text,
+					diveModeBox.currentIndex, salinity, true // shouldSave is true
+				)
+				var newDiveId = planResult.newDiveId
+				if (newDiveId !== -1) {
+					manager.selectDive(newDiveId)
+					showPage(diveList)
+				}
 			}
 		}
 	}
@@ -567,7 +617,7 @@ TemplatePage {
 		}
 		text: "Refresh"
 		onTriggered: {
-			generatePlan()
+			updateLivePlanInfo()
 		}
 	}
 	actions.left: Kirigami.Action {

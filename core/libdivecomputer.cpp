@@ -1447,7 +1447,7 @@ dc_loglevel_t get_libdivecomputer_loglevel()
 	}
 }
 
-std::string do_libdivecomputer_import(device_data_t *data)
+std::string do_libdivecomputer_import(device_data_t *data, dc_authfunc_data_t *auth)
 {
 	dc_status_t rc;
 	FILE *fp = NULL;
@@ -1459,6 +1459,7 @@ std::string do_libdivecomputer_import(device_data_t *data)
 	data->iostream = NULL;
 	data->fingerprint = NULL;
 	data->fsize = 0;
+	data->auth = auth;
 
 	if (data->libdc_log && !logfile_name.empty())
 		fp = subsurface_fopen(logfile_name.c_str(), "w");
