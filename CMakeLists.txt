@@ -590,6 +590,7 @@ if (NOT NO_DOCS)
 			${CMAKE_BINARY_DIR}/Documentation/user-manual.html
 			${CMAKE_BINARY_DIR}/Documentation/user-manual_es.html
 			${CMAKE_BINARY_DIR}/Documentation/user-manual_fr.html
+			${CMAKE_BINARY_DIR}/Documentation/user-manual_de.html
 	)
 	endif()
 endif()
