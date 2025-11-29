@@ -13,8 +13,6 @@ TemplatePage {
 	property string depthUnit: (Backend.length === Enums.METERS) ? qsTr("m") : qsTr("ft")
 
 	property string planNotes: ""
-	property string maxDepth: ""
-	property string duration: ""
 	property var profileData: []
 
 	// --- Data Models ---
@@ -33,15 +31,17 @@ TemplatePage {
 		gasNumberModel = newList;
 	}
 
-	function updateLivePlanInfo() {
+	function generatePlan(savePlan = false) {
 		if (visible && segmentListModel.count > 0 && cylinderListModel.count > 0) {
 			var cylinderData = []
 			for (var i = 0; i < cylinderListModel.count; i++) {
 				var item = cylinderListModel.get(i)
 				cylinderData.push({
-										"type": item.type, "mix": item.mix,
-										"pressure": item.pressure, "use": item.use
-									})
+					"type": item.type,
+					"mix": item.mix,
+					"pressure": item.pressure,
+					"use": overallDivemode.currentIndex == 1 ? item.use : 0,
+				})
 			}
 
 			var segmentData = []
@@ -55,25 +55,31 @@ TemplatePage {
 					descentDuration = Math.ceil(firstSegment.depth / descentRate);
 				}
 				segmentData.push({
-						"depth": firstSegment.depth,
-										"duration": descentDuration,
-										"gas": firstSegment.gas
-									})
+					"depth": firstSegment.depth,
+					"duration": descentDuration,
+					"gas": firstSegment.gas,
+					"setpoint": firstSegment.setpoint,
+					"divemode": firstSegment.divemode,
+				})
 				if (descentDuration < firstSegment.duration) {
 					segmentData.push({
 						"depth": firstSegment.depth, // Stays at the same depth
 						"duration": firstSegment.duration - descentDuration,
-						"gas": firstSegment.gas
+						"gas": firstSegment.gas,
+						"setpoint": firstSegment.setpoint,
+						"divemode": firstSegment.divemode,
 					});
 				}
 			}
 			for (var j = start_index; j < segmentListModel.count; j++) {
 				var item = segmentListModel.get(j)
 				segmentData.push({
-									"depth": item.depth,
-									"duration": item.duration,
-									"gas": item.gas
-								})
+					"depth": item.depth,
+					"duration": item.duration,
+					"gas": item.gas,
+					"setpoint": item.setpoint,
+					"divemode": item.divemode,
+				})
 			}
 			var salinity = 0
 			if (waterTypeBox.currentIndex == 0) {
@@ -88,13 +94,19 @@ TemplatePage {
 
 			var planResult = Backend.divePlannerPointsModel.calculatePlan(
 				cylinderData, segmentData, planDate.text, planTime.text,
-				diveModeBox.currentIndex, salinity, false
+				overallDivemode.currentIndex, salinity, savePlan
 			)
-			// Handle planResult
-			planNotes = planResult.notes
-			maxDepth = planResult.maxDepth
-			duration = planResult.duration
-			profileData = planResult.profile
+			if (savePlan) {
+				var newDiveId = planResult.newDiveId
+				if (newDiveId !== -1) {
+					manager.selectDive(newDiveId)
+					showPage(diveList)
+				}
+			} else {
+				// Handle planResult
+				planNotes = planResult.notes
+				profileData = planResult.profile
+			}
 		}
 
 
@@ -104,7 +116,7 @@ TemplatePage {
 		// This code runs every time the page becomes visible
 		if (visible) {
 			cylinderTypesModel = manager.cylinderListInit;
-			updateLivePlanInfo()
+			generatePlan()
 		}
 	}
 
@@ -125,29 +137,31 @@ TemplatePage {
 		segmentListModel.append({
 			"depth": (Backend.length === Enums.METERS) ? 14 : 45,
 			"duration": 20,
-			"gas": 0 // Default to the first cylinder (index 0)
+			"gas": 0, // Default to the first cylinder (index 0)
+			"setpoint": Backend.default_setpoint,
+			"divemode": 0,
 		});
 
 		updateGasNumberList();
-		updateLivePlanInfo();
+		generatePlan();
 	}
 
 	Connections {
 		target: cylinderListModel
 		onRowsInserted: {
 			updateGasNumberList();
-			updateLivePlanInfo();
+			generatePlan();
 		}
 		onRowsRemoved: {
 			updateGasNumberList();
-			updateLivePlanInfo();
+			generatePlan();
 		}
 	}
 
 	Connections {
 		target: rootItem
 		function onSettingsChanged() {
-			updateLivePlanInfo();
+			generatePlan();
 		}
 	}
 
@@ -185,11 +199,23 @@ TemplatePage {
 				verticalAlignment: Text.AlignVCenter
 			}
 			TemplateComboBox {
-				id: diveModeBox
+				id: overallDivemode
 				Layout.fillWidth: true
-				enabled: false
-				model: [qsTr("Open circuit"), qsTr("CCR"), qsTr("pSCR")]
+				model: [ qsTr("Open circuit"), qsTr("CCR"), qsTr("pSCR") ]
 				currentIndex: 0 // Default to OC
+				onCurrentIndexChanged: {
+					generatePlan();
+				}
+			}
+			TemplateCheckBox {
+				text: qsTr("Deco on OC bailout")
+				Layout.columnSpan: 2
+				checked: Backend.dobailout
+				visible: overallDivemode.currentIndex !== 0
+				onClicked: {
+					Backend.dobailout = checked;
+					generatePlan();
+				}
 			}
 			TemplateLabel {
 				text: qsTr("Water Type")
@@ -198,11 +224,10 @@ TemplatePage {
 			TemplateComboBox {
 				id: waterTypeBox
 				Layout.fillWidth: true
-				enabled: true
-				model: [qsTr("Sea Water"), qsTr("Fresh Water"), qsTr("EN13319")]
+				model: [ qsTr("Sea Water"), qsTr("Fresh Water"), qsTr("EN13319") ]
 				currentIndex: 0 // Default to Sea water
 				onCurrentIndexChanged: {
-					updateLivePlanInfo();
+					generatePlan();
 				}
 			}
 		}
@@ -229,24 +254,28 @@ TemplatePage {
 							"pressure": (Backend.pressure === Enums.BAR) ? 200 : 3000,
 							"use": 0 // Default to OC_GAS
 						});
-						updateLivePlanInfo();
+						generatePlan();
 					}
 			}
 		}
 		RowLayout {
-			Layout.fillWidth: true
 			spacing: Kirigami.Units.smallSpacing // Reduced spacing
 
 			// Header labels updated for new layout
 			TemplateLabel { text: qsTr("#"); Layout.preferredWidth: Kirigami.Units.gridUnit * 2; font.bold: true }
-			TemplateLabel { text: qsTr("Type"); Layout.preferredWidth: Kirigami.Units.gridUnit * 6; font.bold: true }
-			TemplateLabel { text: qsTr("Mix"); Layout.preferredWidth: Kirigami.Units.gridUnit * 4; font.bold: true }
-			TemplateLabel { text: qsTr("Use"); Layout.preferredWidth: Kirigami.Units.gridUnit * 5; font.bold: true }
-			TemplateLabel { text: qsTr("[%1]").arg(pressureUnit); Layout.fillWidth: true; font.bold: true }
+			TemplateLabel { text: qsTr("Type"); Layout.minimumWidth: Kirigami.Units.gridUnit * 8; Layout.maximumWidth: Kirigami.Units.gridUnit * 8; font.bold: true }
+			TemplateLabel { text: qsTr("Mix"); Layout.preferredWidth: Kirigami.Units.gridUnit * 3; font.bold: true }
+			TemplateLabel {
+				text: qsTr("Dil");
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 3;
+				visible: overallDivemode.currentIndex == 1
+				font.bold: true
+			}
+			TemplateLabel { text: qsTr("[%1]").arg(pressureUnit); Layout.preferredWidth: Kirigami.Units.gridUnit * 4; font.bold: true }
 			Item { Layout.preferredWidth: Kirigami.Units.iconSizes.medium }
 		}
 
-				ListView {
+		ListView {
 			id: cylinderListView
 			Layout.fillWidth: true
 			Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 8)
@@ -254,7 +283,6 @@ TemplatePage {
 			model: cylinderListModel
 
 			delegate: RowLayout {
-				width: cylinderListView.width
 				spacing: Kirigami.Units.smallSpacing // Reduced spacing
 
 				TemplateLabel {
@@ -265,26 +293,27 @@ TemplatePage {
 				}
 				TemplateComboBox {
 					id: typeBox
-					Layout.preferredWidth: Kirigami.Units.gridUnit * 10
-					model: divePlannerEditWindow.cylinderTypesModel
+					Layout.minimumWidth: Kirigami.Units.gridUnit * 8
+					Layout.maximumWidth: Kirigami.Units.gridUnit * 8
+					model: cylinderTypesModel
 					currentIndex: model.indexOf(type)
 					onActivated: {
 						if (currentIndex !== -1) {
 							// Update the 'type' property in the model with the selected cylinder text
 							cylinderListModel.setProperty(parent.index, "type", currentText);
-							
+
 							// This updates the dive plan summary in real-time
-							updateLivePlanInfo();
+							generatePlan();
 						}
 					}
 				}
 				TemplateTextField {
 					id: mixField
-					Layout.preferredWidth: Kirigami.Units.gridUnit * 4
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 3
 					text: mix
 					onTextChanged: {
 						cylinderListModel.setProperty(index, "mix", text);
-						updateLivePlanInfo();
+						generatePlan();
 					}
 					onEditingFinished: {
 						var parts = text.split('/');
@@ -307,21 +336,25 @@ TemplatePage {
 					validator: RegExpValidator { regExp: /(EAN100|EAN\d\d|AIR|100|\d{0,2}|\d{0,2}\/\d{0,2})/i }
 					onActiveFocusChanged: cylinderListView.interactive = !activeFocus
 				}
-				TemplateComboBox {
-					Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-					model: [qsTr("OC-gas"), qsTr("diluent"), qsTr("oxygen")]
-					enabled: false
-					currentIndex: use
-					onCurrentIndexChanged: if (currentIndex !== -1) cylinderListModel.setProperty(index, "use", currentIndex)
+				TemplateCheckBox {
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 3
+					// Map the model's 'use' property (0 or 1) to the checkbox state (false or true)
+					checked: use === 1
+					visible: overallDivemode.currentIndex == 1
+					onClicked: {
+						// Update 'use': if checked is true, set 'use' to 1 (Diluent); otherwise, set to 0 (OC-gas)
+						cylinderListModel.setProperty(index, "use", checked ? 1 : 0);
+						generatePlan();
+					}
 				}
 				TemplateTextField {
 					id: pressureField
-					Layout.fillWidth: true
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 4
 					text: pressure.toString()
 					validator: IntValidator { bottom: 0; top: 10000 }
 					onTextChanged: {
 						cylinderListModel.setProperty(index, "pressure", Number(text));
-						updateLivePlanInfo();
+						generatePlan();
 					}
 					onActiveFocusChanged: cylinderListView.interactive = !activeFocus
 				}
@@ -332,7 +365,7 @@ TemplatePage {
 					enabled: cylinderListModel.count > 1
 					onClicked: {
 						cylinderListModel.remove(index);
-						updateLivePlanInfo();
+						generatePlan();
 					}
 				}
 			}
@@ -359,21 +392,46 @@ TemplatePage {
 						segmentListModel.append({
 							"depth": lastSegment.depth,
 							"duration": 10,
-							"gas": lastSegment.gas
+							"gas": lastSegment.gas,
+							"setpoint": lastSegment.setpoint,
+							"divemode": lastSegment.divemode,
 						});
-						updateLivePlanInfo();
+						generatePlan();
 					}
 				}
 			}
 		}
 
 		RowLayout {
-			Layout.fillWidth: true
 			spacing: Kirigami.Units.gridUnit
 
-			TemplateLabel { text: qsTr("Depth (%1)").arg(depthUnit); Layout.fillWidth: true; font.bold: true }
-			TemplateLabel { text: qsTr("Duration (min)"); Layout.fillWidth: true; font.bold: true }
-			TemplateLabel { text: qsTr("Gas"); Layout.fillWidth: true; font.bold: true }
+			TemplateLabel {
+				text: qsTr("Depth [%1]").arg(depthUnit);
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 4
+				font.bold: true
+			}
+			TemplateLabel {
+				text: qsTr("Time [min]");
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 4
+				font.bold: true
+			}
+			TemplateLabel {
+				text: qsTr("Gas");
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+				font.bold: true;
+			}
+			TemplateLabel {
+				text: qsTr("Setpoint [bar]");
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+				font.bold: true;
+				visible: overallDivemode.currentIndex == 1;
+			}
+			TemplateLabel {
+				text: qsTr("Dive Mode");
+				Layout.preferredWidth: Kirigami.Units.gridUnit * 6
+				font.bold: true;
+				visible: overallDivemode.currentIndex == 2;
+			}
 			Item { Layout.preferredWidth: Kirigami.Units.iconSizes.medium } // Spacer
 		}
 
@@ -385,42 +443,72 @@ TemplatePage {
 
 			model: segmentListModel
 			delegate: RowLayout {
-				width: segmentListView.width
 				spacing: Kirigami.Units.gridUnit
 
 				TemplateTextField {
-					Layout.fillWidth: true
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 4
 					text: depth.toString()
 					validator: IntValidator { bottom: 0; top: 900 }
 					onTextChanged: {
 						segmentListModel.setProperty(index, "depth", Number(text));
-						updateLivePlanInfo();
+						generatePlan();
 					}
 					onActiveFocusChanged: segmentListView.interactive = !activeFocus
 				}
 
 				TemplateTextField {
-					Layout.fillWidth: true
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 4
 					text: duration.toString()
 					validator: IntValidator { bottom: 1; top: 999 }
 					onTextChanged: {
 						segmentListModel.setProperty(index, "duration", Number(text));
-						updateLivePlanInfo();
+						generatePlan();
 					}
 					onActiveFocusChanged: segmentListView.interactive = !activeFocus
 				}
 
 				TemplateComboBox {
-					Layout.fillWidth: true
-					Layout.minimumWidth: Kirigami.Units.gridUnit * 6
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 5
 					model: gasNumberModel
-
 					currentIndex: gas
-					onActivated: {
-						if (currentIndex !== -1)
-						   segmentListModel.setProperty(parent.index, "gas", currentIndex)
-						updateLivePlanInfo();
+					onCurrentIndexChanged: {
+						segmentListModel.setProperty(index, "gas", currentIndex)
+						generatePlan();
 					}
+					onActiveFocusChanged: segmentListView.interactive = !activeFocus
+				}
+
+				TemplateTextField {
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+					text: cylinderListModel.get(gas) && cylinderListModel.get(gas).use === 1 ? (setpoint / 1000.0).toFixed(2) : ""
+					validator: DoubleValidator {
+						bottom: 0.16;
+						top: 2.0;
+						decimals: 2;
+						notation: DoubleValidator.StandardNotation
+					}
+					visible: overallDivemode.currentIndex == 1
+					enabled: cylinderListModel.get(gas) && cylinderListModel.get(gas).use == 1
+					onTextChanged: {
+						if (cylinderListModel.get(gas) && cylinderListModel.get(gas).use === 1) {
+							segmentListModel.setProperty(index, "setpoint", Number(text) * 1000);
+							generatePlan();
+						}
+					}
+					onActiveFocusChanged: segmentListView.interactive = !activeFocus
+				}
+
+				TemplateComboBox {
+					Layout.preferredWidth: Kirigami.Units.gridUnit * 6
+					model: [ qsTr("OC"), qsTr("pSCR") ]
+					// Skip CCR (value === 1) as it's not applicable for pSCR mode
+					currentIndex: divemode === 2 ? 1 : divemode
+					visible: overallDivemode.currentIndex == 2
+					onCurrentIndexChanged: {
+						segmentListModel.setProperty(index, "divemode", currentIndex === 1 ? 2 : currentIndex);
+						generatePlan();
+					}
+					onActiveFocusChanged: segmentListView.interactive = !activeFocus
 				}
 
 				TemplateButton {
@@ -430,7 +518,7 @@ TemplatePage {
 					Layout.preferredWidth: Kirigami.Units.gridUnit * 2
 					onClicked: {
 						segmentListModel.remove(index);
-						updateLivePlanInfo();
+						generatePlan();
 					}
 
 				}
@@ -538,65 +626,7 @@ TemplatePage {
 			font.bold: true
 			Layout.fillWidth: true
 			onClicked: {
-				var cylinderData = []
-				for (var i = 0; i < cylinderListModel.count; i++) {
-					var item = cylinderListModel.get(i)
-					cylinderData.push({
-											"type": item.type, "mix": item.mix,
-											"pressure": item.pressure, "use": item.use
-										})
-				}
-
-				var segmentData = []
-				var start_index = 0
-				if (Backend.drop_stone_mode && segmentListModel.count > 0) {
-					start_index = 1
-					var descentRate = Backend.descrate;
-					var firstSegment = segmentListModel.get(0)
-					var descentDuration = 1
-					if (descentRate > 0) {
-						descentDuration = Math.ceil(firstSegment.depth / descentRate);
-					}
-					segmentData.push({
-							"depth": firstSegment.depth,
-											"duration": descentDuration,
-											"gas": firstSegment.gas
-										})
-					if (descentDuration < firstSegment.duration) {
-						segmentData.push({
-							"depth": firstSegment.depth, // Stays at the same depth
-							"duration": firstSegment.duration - descentDuration,
-							"gas": firstSegment.gas
-						});
-					}
-				}
-				for (var j = 0; j < segmentListModel.count; j++) {
-					var item = segmentListModel.get(j)
-					segmentData.push({
-										"depth": item.depth,
-										"duration": item.duration,
-										"gas": item.gas
-									})
-				}
-				var salinity = 0
-				if (waterTypeBox.currentIndex == 0) {
-					salinity = 10300;
-				}
-				if (waterTypeBox.currentIndex == 1) {
-					salinity = 10000;
-				}
-				if (waterTypeBox.currentIndex == 2) {
-					salinity = 10200;
-				}
-				var planResult = Backend.divePlannerPointsModel.calculatePlan(
-					cylinderData, segmentData, planDate.text, planTime.text,
-					diveModeBox.currentIndex, salinity, true // shouldSave is true
-				)
-				var newDiveId = planResult.newDiveId
-				if (newDiveId !== -1) {
-					manager.selectDive(newDiveId)
-					showPage(diveList)
-				}
+				generatePlan(true);
 			}
 		}
 	}
@@ -617,7 +647,7 @@ TemplatePage {
 		}
 		text: "Refresh"
 		onTriggered: {
-			updateLivePlanInfo()
+			generatePlan()
 		}
 	}
 	actions.left: Kirigami.Action {
