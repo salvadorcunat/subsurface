@@ -691,7 +691,11 @@ QDateTime timestampToDateTime(timestamp_t when)
 {
 	// Subsurface always uses "local time" as in "whatever was the local time at the location"
 	// so all time stamps have no time zone information and are in UTC
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+	return QDateTime::fromMSecsSinceEpoch(1000 * when, QTimeZone::utc());
+#else
 	return QDateTime::fromMSecsSinceEpoch(1000 * when, Qt::UTC);
+#endif
 }
 
 timestamp_t dateTimeToTimestamp(const QDateTime &t)
@@ -701,10 +705,17 @@ timestamp_t dateTimeToTimestamp(const QDateTime &t)
 
 QString render_seconds_to_string(int seconds)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+	if (seconds % 60 == 0)
+		return QDateTime::fromSecsSinceEpoch(seconds, QTimeZone::utc()).toUTC().toString("h:mm");
+	else
+		return QDateTime::fromSecsSinceEpoch(seconds, QTimeZone::utc()).toUTC().toString("h:mm:ss");
+#else
 	if (seconds % 60 == 0)
 		return QDateTime::fromSecsSinceEpoch(seconds, Qt::UTC).toUTC().toString("h:mm");
 	else
 		return QDateTime::fromSecsSinceEpoch(seconds, Qt::UTC).toUTC().toString("h:mm:ss");
+#endif
 }
 
 int parseDurationToSeconds(const QString &text)
@@ -1391,7 +1402,9 @@ void parse_seabear_header(const char *filename, struct xml_params *params)
 {
 	QFile f(filename);
 
-	f.open(QFile::ReadOnly);
+	if (!f.open(QFile::ReadOnly))
+		return;
+
 	QString parseLine = f.readLine();
 
 	/*
