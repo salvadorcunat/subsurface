@@ -31,7 +31,7 @@ jobs:
 
     - name: load the documentation from cache
       id: load-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: Documentation/output
         key: documentation-${{ hashFiles('.github/workflows/documentation-build.yml', 'Documentation') }}
@@ -45,7 +45,7 @@ jobs:
         nightly-builds-secret: ${{ secrets.NIGHTLY_BUILDS }}
 
     - name: publish artifacts
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: Subsurface-Documentation-${{ steps.version_number.outputs.version }}
         path: Documentation/output

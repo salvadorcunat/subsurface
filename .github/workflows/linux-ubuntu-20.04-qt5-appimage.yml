@@ -58,7 +58,7 @@ jobs:
 
     - name: load the documentation from cache
       id: load-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: Documentation/output
         key: documentation-${{ hashFiles('.github/workflows/documentation-build.yml', 'Documentation') }}
@@ -130,7 +130,7 @@ jobs:
     - name: PR artifacts
       if: github.event_name == 'pull_request'
       # We cannot update this as glibc on 16.04 is too old for node 20.
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: Subsurface-Linux-AppImage-${{ steps.version_number.outputs.version }}
         path: Subsurface-*.AppImage

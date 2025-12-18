@@ -55,7 +55,7 @@ jobs:
         echo "key=$( git merge-base origin/master $GITHUB_SHA )" >> $GITHUB_OUTPUT
 
     - name: CCache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         key: linux-ccache-${{ runner.os }}-${{ steps.setup-ccache.outputs.key }}
         restore-keys: |
@@ -73,7 +73,7 @@ jobs:
 
     - name: Upload the snap
       if: github.event_name == 'push'
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ steps.build-snap.outputs.snap-name }}
         path: ${{ steps.build-snap.outputs.snap-path }}
