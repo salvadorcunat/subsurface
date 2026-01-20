@@ -185,29 +185,44 @@ if [ "$QUICK" != "1" ] ; then
 
 	# build libxml2 and libxslt
 	if [ ! -e "$PKG_CONFIG_LIBDIR"/libxml-2.0.pc ] ; then
-		if [ ! -e "$PARENT_DIR"/libxml2/configure ] ; then
-			pushd "$PARENT_DIR"/libxml2
-			autoreconf --install
-			popd
-		fi
 		mkdir -p "$PARENT_DIR"/libxml2-build-"$ARCH"
 		pushd "$PARENT_DIR"/libxml2-build-"$ARCH"
-		"$PARENT_DIR"/libxml2/configure --host=${BUILDCHAIN} --prefix="$PREFIX" --without-lzma --without-python --without-iconv --enable-static --disable-shared
-		perl -pi -e 's/runtest\$\(EXEEXT\)//' Makefile
-		perl -pi -e 's/testrecurse\$\(EXEEXT\)//' Makefile
+		cmake -DBUILD_SHARED_LIBS="OFF" \
+			-DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
+			-DCMAKE_SYSTEM_NAME=iOS \
+			-DCMAKE_OSX_ARCHITECTURES=${ARCH} \
+			-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+			-DCMAKE_OSX_SYSROOT="$IPHONEOS_SDK" \
+			-DCMAKE_INSTALL_PREFIX="$PREFIX" \
+			-DCMAKE_PREFIX_PATH="$PREFIX" \
+			-DCMAKE_DISABLE_FIND_PACKAGE_BZip2=TRUE \
+			-DENABLE_OPENSSL=FALSE \
+			-DENABLE_GNUTLS=FALSE \
+			"${PARENT_DIR}/libxml2"
 		make
 		make install
 		popd
 	fi
 
-	# the config.sub in libxslt is too old
-	pushd "$PARENT_DIR"/libxslt
-	autoreconf --install
-	popd
 	if [ ! -e "$PKG_CONFIG_LIBDIR"/libxslt.pc ] ; then
 		mkdir -p "${PARENT_DIR}/libxslt-build-${ARCH}"
 		pushd "${PARENT_DIR}/libxslt-build-${ARCH}"
-		"$PARENT_DIR"/libxslt/configure --host=$BUILDCHAIN --prefix="$PREFIX" --with-libxml-include-prefix="$INSTALL_ROOT"/include/libxml2 --without-python --without-crypto --enable-static --disable-shared
+		# "$PARENT_DIR"/libxslt/configure CFLAGS="-Wno-incompatible-function-pointer-types" --host=$BUILDCHAIN --prefix="$PREFIX" --with-libxml-include-prefix="$INSTALL_ROOT"/include/libxml2 --without-python --without-crypto --enable-static --disable-shared
+		cmake -DBUILD_SHARED_LIBS="OFF" \
+			-DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
+			-DCMAKE_SYSTEM_NAME=iOS \
+			-DCMAKE_OSX_ARCHITECTURES=${ARCH} \
+			-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+			-DCMAKE_OSX_SYSROOT="$IPHONEOS_SDK" \
+			-DCMAKE_INSTALL_PREFIX="$PREFIX" \
+			-DCMAKE_PREFIX_PATH="$PREFIX" \
+			-DCMAKE_DISABLE_FIND_PACKAGE_BZip2=TRUE \
+			-DCMAKE_C_FLAGS="-Wno-nullability-completeness" \
+			-DLIBXSLT_WITH_PROFILER="OFF" \
+			-DLIBXSLT_WITH_PROGRAMS="OFF" \
+			-DLIBXSLT_WITH_PYTHON="OFF" \
+			-DLIBXSLT_WITH_TESTS="OFF" \
+			"${PARENT_DIR}/libxslt"
 		make
 		make install
 		popd
@@ -248,14 +263,27 @@ if [ "$QUICK" != "1" ] ; then
 		    -G "Unix Makefiles" \
 		    -DBUILD_SHARED_LIBS="OFF" \
 		    -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
+			-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
 			-DSHA1_TYPE=builtin \
 			-DBUILD_CLAR=OFF \
+			-DBUILD_CLI=OFF \
+			-DBUILD_TESTS=OFF \
 			-DCMAKE_INSTALL_PREFIX="$PREFIX" \
 			-DCMAKE_PREFIX_PATH="$PREFIX" \
 			-DCURL=OFF \
 			-DUSE_SSH=OFF \
+			-DUSE_HTTPS=SecureTransport \
+			-DSECURITY_FOUND=TRUE \
+			-DSECURITY_HAS_SSLCREATECONTEXT=TRUE \
+			-DSECURITY_INCLUDE_DIR="$SDK_DIR/usr/include" \
+			-DSECURITY_LIBRARIES="$SDK_DIR/System/Library/Frameworks/Security.framework" \
+			-DSECURITY_LDFLAGS="-framework Security" \
+			-DCOREFOUNDATION_FOUND=TRUE \
+			-DCOREFOUNDATION_LIBRARIES="$SDK_DIR/System/Library/Frameworks/CoreFoundation.framework" \
+			-DCOREFOUNDATION_LDFLAGS="-framework CoreFoundation" \
+			-DCMAKE_C_FLAGS="-Wno-error" \
 			"${PARENT_DIR}/libgit2/"
-		sed -i.bak 's/C_FLAGS = /C_FLAGS = -Wno-nullability-completeness -Wno-expansion-to-defined /' src/CMakeFiles/git2.dir/flags.make
+		find . -name flags.make -exec sed -i.bak 's/C_FLAGS = /C_FLAGS = -Wno-nullability-completeness -Wno-expansion-to-defined -Wno-comment -Wno-variadic-macros /' {} \;
 		make
 		make install
 		# Patch away pkg-config dependency to zlib, its there, i promise
@@ -298,15 +326,19 @@ if [ "$QUICK" != "1" ] ; then
 	# yes, shellcheck will complain that we don't enclose QMAKEARG in quotes when we use it
 	# that's intentional so that the command line argument actually works
 	# shellcheck disable=SC2086
+	rm -f Makefile
 	"$QMAKE" $QMAKEARG "$PARENT_DIR"/googlemaps/googlemaps.pro \
+		QMAKE_APPLE_DEVICE_ARCHS="$ARCH" \
 		-spec macx-ios-clang CONFIG+=$TARGET CONFIG+=$TARGET2 CONFIG+=release
-	make
+	make ARCHS="$ARCH"
 	if [ "$DEBUGRELEASE" != "Release" ] ; then
 		# shellcheck disable=SC2086
+		rm -f Makefile
 		"$QMAKE" $QMAKEARG "$PARENT_DIR"/googlemaps/googlemaps.pro \
+			QMAKE_APPLE_DEVICE_ARCHS="$ARCH" \
 			-spec macx-ios-clang CONFIG+=$TARGET CONFIG+=$TARGET2 CONFIG+=debug
 		make clean
-		make
+		make ARCHS="$ARCH"
 	fi
 	popd
 
@@ -314,9 +346,11 @@ if [ "$QUICK" != "1" ] ; then
 	mkdir -p "$PARENT_DIR"/kirigami-release-build
 	pushd "$PARENT_DIR"/kirigami-release-build
 	# shellcheck disable=SC2086
+	rm -f Makefile
 	"$QMAKE" $QMAKEARG "$SUBSURFACE_SOURCE"/mobile-widgets/3rdparty/kirigami/kirigami.pro \
+		QMAKE_APPLE_DEVICE_ARCHS="$ARCH" \
 		-spec macx-ios-clang CONFIG+=$TARGET CONFIG+=$TARGET2 CONFIG+=release
-	make
+	make ARCHS="$ARCH"
 	# since the install prefix for qmake is rather weirdly implemented, let's copy things by hand into the multiarch destination
 	mkdir -p "$INSTALL_ROOT"/lib/qml/
 	cp -a org "$INSTALL_ROOT"/lib/qml/
@@ -325,9 +359,11 @@ if [ "$QUICK" != "1" ] ; then
 		mkdir -p "$PARENT_DIR"/kirigami-debug-build
 		pushd "$PARENT_DIR"/kirigami-debug-build
 		# shellcheck disable=SC2086
+		rm -f Makefile
 		"$QMAKE" $QMAKEARG "$SUBSURFACE_SOURCE"/mobile-widgets/3rdparty/kirigami/kirigami.pro \
+			QMAKE_APPLE_DEVICE_ARCHS="$ARCH" \
 			-spec macx-ios-clang CONFIG+=$TARGET CONFIG+=$TARGET2 CONFIG+=debug
-		make
+		make ARCHS="$ARCH"
 		# since the install prefix for qmake is rather weirdly implemented, let's copy things by hand into the multiarch destination
 		mkdir -p "$INSTALL_ROOT"/lib/qml/
 		cp -a org "$INSTALL_ROOT"/lib/qml/
@@ -364,16 +400,31 @@ for BUILD_NOW in $BUILD_LOOP; do
 	pushd "$BUILDX"
 	rm -f ssrf-version.h
 	ln -s "$SUBSURFACE_SOURCE"/ssrf-version.h .
+
+	# Copy the appropriate MapWidget.qml based on Qt version
+	QT_MAJOR=$(echo "$QT_VERSION" | cut -d. -f1)
+	if [ "$QT_MAJOR" -ge 6 ]; then
+		echo "Using MapWidgetQt6.qml for Qt $QT_VERSION"
+		cp -f "$SUBSURFACE_SOURCE"/map-widget/qml/MapWidgetQt6.qml "$SUBSURFACE_SOURCE"/map-widget/qml/MapWidget.qml
+	else
+		echo "Using MapWidgetQt5.qml for Qt $QT_VERSION"
+		cp -f "$SUBSURFACE_SOURCE"/map-widget/qml/MapWidgetQt5.qml "$SUBSURFACE_SOURCE"/map-widget/qml/MapWidget.qml
+	fi
+
 	# shellcheck disable=SC2086
+	rm -f Makefile
 	"$QMAKE" $QMAKEARG ARCH=$ARCH "$SUBSURFACE_SOURCE"/Subsurface-mobile.pro \
+		QMAKE_APPLE_DEVICE_ARCHS="$ARCH" \
+		QML_IMPORT_PATH= \
+		QML2_IMPORT_PATH= \
 		-spec macx-ios-clang CONFIG+=$TARGET CONFIG+=$TARGET2 CONFIG+=$DRCONFIG
 
 	# it appears that a first make fails with a missing generated file, which a second
 	# invocation of make will happily build
-	make || make
+	make ARCHS="$ARCH" || make ARCHS="$ARCH"
 
 	# Clean up the generated ssrf-version.h file
-	rm -f "$SUBSURFACE_SOURCE"/ssrf-version.h .
+	rm -f "$SUBSURFACE_SOURCE"/ssrf-version.h
 
 	popd
 done
