@@ -12,8 +12,17 @@ BROWSER = firefox
 THEME = compact_subsurface
 PWD = $(realpath .)
 
-# Generate cached version file (regenerates when git state changes, falls back to <unknown> when git unavailable)
-.latest_change_version: $(wildcard ../.git/index)
+# Track the last commit hash affecting Documentation/ (not the version string)
+# FORCE ensures this rule always runs to check for git changes
+.latest_change_git_hash: FORCE
+	@NEW_HASH=$$(git log -1 --pretty=format:%H . 2>/dev/null || echo "unknown"); \
+	CURRENT=$$(cat $@ 2>/dev/null || echo ""); \
+	if [ "$$NEW_HASH" != "$$CURRENT" ]; then \
+		echo "$$NEW_HASH" > $@; \
+	fi
+
+# Rebuild version file only when Documentation/ commit history changes
+.latest_change_version: .latest_change_git_hash
 	@git log -1 --pretty=format:%H . 2>/dev/null | xargs ../scripts/get-version-for-changeset.sh > $@ 2>/dev/null || echo "<unknown>" > $@
 
 # Read version from cache (fast; .latest_change_version regenerates when git state changes)
@@ -24,13 +33,14 @@ ifeq ($(DISPLAY_VERSION),<unknown>)
 DISPLAY_VERSION = &lt;unknown&gt;
 endif
 
-.PHONY: all doc show clean
+VERSION_OPTIONS := -a version="$(DISPLAY_VERSION)" -a version-date="$(VERSION_DATE)"
+ASCIIDOC_OPTIONS = -a toc=left -a themedir=$(PWD) -a theme=$(THEME) --failure-level=WARN $(VERSION_OPTIONS)
 
-.NOTPARALLEL:
+.PHONY: all doc show clean
 
 mkdir = @mkdir -p $(@D)
 
-all: $(HTMLDOCS) $(TEXTDOCS) $(PDFDOCS)
+all: .latest_change_version $(HTMLDOCS) $(TEXTDOCS) $(PDFDOCS)
 
 doc: $(HTMLDOCS)
 
@@ -43,14 +53,13 @@ $(OUT)/%.text: $(OUT)/%.html
 	$(mkdir)
 	w3m -dump -T text/html $< > $@
 
-
-$(OUT)/%.pdf: %.txt | .latest_change_version
+$(OUT)/%.pdf: %.txt .latest_change_version
 	$(mkdir)
-	$(A2X) -a version="$(DISPLAY_VERSION)" -a version-date="$(VERSION_DATE)" -o $(OUT)/$(basename $(notdir $<)).pdf $<
+	$(A2X) $(VERSION_OPTIONS) --failure-level=WARN -o $(OUT)/$(basename $(notdir $<)).pdf $<
 
-$(OUT)/%.html: %.txt | $(OUT)/images .latest_change_version
+$(OUT)/%.html: %.txt .latest_change_version | $(OUT)/images
 	$(mkdir)
-	$(ASCIIDOC) -a toc=left -a toc-position=left -a themedir=$(PWD) -a theme=$(THEME) -a version="$(DISPLAY_VERSION)" -a version-date="$(VERSION_DATE)" -o $@ $<
+	$(ASCIIDOC) $(ASCIIDOC_OPTIONS) -a toc-position=left -o $@ $<
 
 # for the web facing version of the desktop manual, just use the post-processing script
 user-manual.html.wp: $(OUT)/user-manual.html
@@ -61,14 +70,17 @@ user-manual.html.wp: $(OUT)/user-manual.html
 # the table of context and then post process
 mobile-manual-v3.html.wp: mobile-manual-v3.txt
 	$(mkdir)
-	$(ASCIIDOC) -a toc=left -a toclevels=1 -a themedir=$(PWD) -a theme=$(THEME) -a version="$(DISPLAY_VERSION)" -a version-date="$(VERSION_DATE)" -o $(<:%.txt=%.html.tmp) $< && \
-		bash ../scripts/prep-manual.sh $(<:%.txt=%.html.tmp) && \
-		rm $(<:%.txt=%.html.tmp) && \
-		mv $(<:%.txt=%.html.tmp.wp) $(OUT)/$@
+	$(ASCIIDOC) $(ASCIIDOC_OPTIONS) -a toclevels=1 -o $(<:%.txt=%.html.tmp) $<
+	bash ../scripts/prep-manual.sh $(<:%.txt=%.html.tmp)
+	$(RM) $(<:%.txt=%.html.tmp)
+	mv $(<:%.txt=%.html.tmp.wp) $(OUT)/$@
 
 show: $(HTMLDOC)
 	$(BROWSER) $<
 
 clean:
-	rm -f *~ *.xml docbook-xsl.css .latest_change_version
-	rm -rf $(OUT)/
+	$(RM) *~ *.xml docbook-xsl.css .latest_change_version .latest_change_git_hash
+	$(RM) -r $(OUT)/
+
+.PHONY: FORCE
+FORCE:
