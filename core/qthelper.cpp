@@ -1546,23 +1546,6 @@ void parse_seabear_header(const char *filename, struct xml_params *params)
 	f.close();
 }
 
-void print_qt_versions()
-{
-	printf("%s\n", qPrintable(QStringLiteral("built with Qt Version %1, runtime from Qt Version %2").arg(QT_VERSION_STR).arg(qVersion())));
-}
-
-QMutex planLock;
-
-void lock_planner()
-{
-	planLock.lock();
-}
-
-void unlock_planner()
-{
-	planLock.unlock();
-}
-
 // function to call to allow the UI to show updates for longer running activities
 void (*uiNotificationCallback)(QString msg) = nullptr;
 
