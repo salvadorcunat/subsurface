@@ -9,8 +9,10 @@
 #include "core/divelist.h"
 #include "core/divelog.h"
 #include "core/divesite.h"
+#include "core/pref.h"
 #include "core/qthelper.h"
 #include "core/range.h"
+#include "core/string-format.h"
 #include "qt-models/maplocationmodel.h"
 #include "qt-models/divelocationmodel.h"
 #ifndef SUBSURFACE_MOBILE

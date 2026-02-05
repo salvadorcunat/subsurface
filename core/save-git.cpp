@@ -16,6 +16,7 @@
 #include <git2.h>
 #include <memory>
 
+#include "commands/command.h"
 #include "dive.h"
 #include "divelog.h"
 #include "divesite.h"
@@ -33,6 +34,7 @@
 #include "version.h"
 #include "picture.h"
 #include "qthelper.h"
+#include "pref.h"
 #include "range.h"
 #include "gettext.h"
 #include "tag.h"
@@ -1072,7 +1074,7 @@ int get_authorship(git_repository *repo, git_signature **authorp)
 static void create_commit_message(struct membuffer *msg, bool create_empty)
 {
 	int nr = static_cast<int>(divelog.dives.size());
-	std::string changes_made = get_changes_made();
+	std::string changes_made = Command::changesMade();
 
 	if (create_empty) {
 		put_string(msg, "Initial commit to create empty repo.\n\n");

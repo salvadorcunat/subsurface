@@ -16,6 +16,7 @@
 #include "core/sample.h"
 #include "core/selection.h"
 #include "core/subsurface-time.h"
+#include "core/string-format.h"
 #include "core/settings/qPrefDivePlanner.h"
 #include "core/settings/qPrefTechnicalDetails.h"
 #include "core/settings/qPrefUnit.h"
@@ -1143,7 +1144,7 @@ void DivePlannerPointsModel::createTemporaryPlan()
 
 static bool shouldComputeVariations()
 {
-	return prefs.display_variations && decoMode(true) != RECREATIONAL;
+	return prefs.display_variations && pref_deco_mode(true) != RECREATIONAL;
 }
 
 void DivePlannerPointsModel::updateDiveProfile()
