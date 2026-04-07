@@ -71,6 +71,7 @@ private:
 	QLowEnergyController *controller;
 	QLowEnergyService *preferred = nullptr;
 	QList<QByteArray> receivedPackets;
+	bool notify = false;
 	bool isCharacteristicWritten;
 	device_data_t &device;
 	unsigned int hw_credit = 0;
