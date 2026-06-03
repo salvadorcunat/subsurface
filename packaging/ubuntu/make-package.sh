@@ -140,8 +140,21 @@ fi
 cd ..
 
 if [[ "$1" = "current" ]] ; then
-	# this is a current release
-	dput ppa:subsurface/subsurface "$FOLDER-$rev"~*.changes
+	PPA="ppa:subsurface/subsurface"
 else
-	dput ppa:subsurface/subsurface-daily "$FOLDER-$rev"~*.changes
+	PPA="ppa:subsurface/subsurface-daily"
+fi
+
+# Upload each distro variant separately so that orig.tar.xz is included in
+# every batch.
+# Launchpad appears to be randomly failing, even in this scenario, so try
+# all of them and then error at the end if one or more didn't succeed.
+failed=""
+for f in "${FOLDER}-${rev}"~*.changes; do
+	rm -f ~/.dput.log
+	dput "$PPA" "$f" || { echo "WARNING: dput failed for $f"; failed="$failed $f"; }
+done
+if [ -n "$failed" ]; then
+	echo "The following uploads failed:$failed"
+	exit 1
 fi

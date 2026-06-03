@@ -137,7 +137,7 @@ public class SubsurfaceMobileActivity extends QtActivity
 	public void onNewIntent(Intent intent)
 	{
 		Log.i(TAG + " onNewIntent", intent.getAction());
-		UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+		UsbDevice device = getUsbDevice(intent);
 		if (device == null) {
 			Log.i(TAG + " onNewIntent", "null device");
 			return;
@@ -174,7 +174,7 @@ public class SubsurfaceMobileActivity extends QtActivity
 			return;
 		}
 		Log.i(TAG + " processIntent", intent.getAction());
-		UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+		UsbDevice device = getUsbDevice(intent);
 		if (device == null) {
 			Log.i(TAG + " processIntent", "null device");
 			return;
@@ -182,13 +182,25 @@ public class SubsurfaceMobileActivity extends QtActivity
 		Log.i(TAG + " processIntent device name", device.getDeviceName());
 		try {
 			setUsbDevice(device);
-		} catch (UnsatisfiedLinkError e) {
-			// The native library may not be fully loaded yet (observed on
-			// Android 16 Beta). Defer the intent and let checkPendingIntents()
-			// process it once the native side is ready.
-			Log.w(TAG + " processIntent", "native not ready, deferring intent", e);
+		} catch (LinkageError e) {
+			// The native library may not be fully loaded yet.
+			// checkPendingIntents() is only called once
+			// during startup, so schedule a one-shot retry
+			Log.w(TAG + " processIntent", "native not ready, scheduling retry", e);
 			isIntentPending = true;
-			isInitialized = false;
+			new Handler(Looper.getMainLooper()).postDelayed(() -> {
+				if (!isIntentPending)
+					return;
+				isIntentPending = false;
+				UsbDevice retryDevice = getUsbDevice(getIntent());
+				if (retryDevice == null)
+					return;
+				try {
+					setUsbDevice(retryDevice);
+				} catch (LinkageError retryError) {
+					Log.e(TAG + " processIntent", "native still not ready after retry, giving up", retryError);
+				}
+			}, 500);
 		}
 	} // processIntent
 
@@ -200,7 +212,7 @@ public class SubsurfaceMobileActivity extends QtActivity
 			if ("org.subsurfacedivelog.mobile.USB_PERMISSION".equals(action)) {
 				synchronized (this) {
 					if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-						UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+						UsbDevice device = getUsbDevice(intent);
 						if (device == null) {
 							Log.i(TAG, " permission granted but null device");
 							return;
@@ -218,5 +230,14 @@ public class SubsurfaceMobileActivity extends QtActivity
 	public static Context getAppContext()
 	{
 		return appContext;
+	}
+
+	// getParcelableExtra(String) was deprecated in API 33; the typed overload
+	// requires API 33, so guard by version.
+	@SuppressWarnings("deprecation")
+	private static UsbDevice getUsbDevice(Intent intent) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+			return intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice.class);
+		return intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
 	}
 }
