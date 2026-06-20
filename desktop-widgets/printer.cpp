@@ -336,10 +336,63 @@ QString Printer::generateContent()
 	// still applies.  Use max-width/max-height to constrain the image
 	// proportionally — the image picks whichever is more restrictive
 	// while maintaining its aspect ratio.
-	QString repl = QString("<div class=\"diveProfile\" id=\"dive_\\1\">"
-			       "<img style=\"max-width:100%%; max-height:%1px;\" src=\"file:///%2/dive_\\1.png\">"
-			       "</div>").arg(profileMaxHeight).arg(printDir.path());
-	html.replace(QRegularExpression("<div\\s+class=\"diveProfile\"\\s+id=\"dive_([^\"]*)\"\\s*>\\s*</div>"), repl);
+	//
+	// We must accept the full range of <div> spellings that the old
+	// WebKit-based printing path used to handle:
+	//   - extra classes alongside "diveProfile" (e.g. "summary diveProfile compact")
+	//   - the diveProfile class/id attributes in any order, with any number
+	//     of additional attributes (style="...", data-*, etc.)
+	//   - self-closing form  <div ... />
+	//   - explicit empty form <div ...></div>
+	// The replacement preserves the original opening tag's attributes so
+	// the template author's styling continues to apply, and replaces the
+	// empty body with the <img> referencing the rendered profile.
+	QRegularExpression diveDivRe(R"(<div\b([^>]*?)\s*(/)?>(\s*</div>)?)",
+				      QRegularExpression::DotMatchesEverythingOption);
+	QRegularExpression classAttrRe(R"RX(\bclass\s*=\s*"([^"]*)")RX");
+	QRegularExpression idAttrRe(R"RX(\bid\s*=\s*"dive_([^"]+)")RX");
+	QRegularExpression wsRe(R"(\s+)");
+
+	QString rewritten;
+	rewritten.reserve(html.size());
+	int last = 0;
+	QRegularExpressionMatchIterator it = diveDivRe.globalMatch(html);
+	while (it.hasNext()) {
+		QRegularExpressionMatch m = it.next();
+		const QString attrs = m.captured(1);
+		const bool selfClosing = m.captured(2) == "/";
+		const bool hasExplicitClose = !m.captured(3).isEmpty();
+
+		// Only rewrite empty divs — either self-closing or immediately
+		// followed by </div>. A div that wraps content is not a profile
+		// placeholder.
+		if (!selfClosing && !hasExplicitClose)
+			continue;
+
+		QRegularExpressionMatch cm = classAttrRe.match(attrs);
+		QRegularExpressionMatch im = idAttrRe.match(attrs);
+		if (!cm.hasMatch() || !im.hasMatch())
+			continue;
+
+		const QStringList classes = cm.captured(1).split(wsRe, SKIP_EMPTY);
+		if (!classes.contains(QStringLiteral("diveProfile")))
+			continue;
+
+		const QString diveId = im.captured(1);
+		const QString replacement =
+			QString("<div%1><img style=\"max-width:100%%; max-height:%2px;\" "
+				"src=\"file:///%3/dive_%4.png\"></div>")
+				.arg(attrs)
+				.arg(profileMaxHeight)
+				.arg(printDir.path())
+				.arg(diveId);
+
+		rewritten.append(html.mid(last, m.capturedStart() - last));
+		rewritten.append(replacement);
+		last = m.capturedEnd();
+	}
+	rewritten.append(html.mid(last));
+	html = rewritten;
 
 	// Adapt the HTML for litehtml compatibility.
 	// pageSize must be set before calling generateContent() —
@@ -599,29 +652,54 @@ void Printer::print()
 void Printer::previewOnePage()
 {
 	if (printMode == PREVIEW) {
+#ifdef USE_QLITEHTML
+		// Render the first page of the document into the supplied
+		// paintDevice (a QImage in the test harness, a widget pixmap
+		// elsewhere) using QLiteHtmlWidget.  generateContent() does
+		// the profile-image injection and litehtml CSS adaptation.
+		pageSize.setHeight(paintDevice->height());
+		pageSize.setWidth(paintDevice->width());
+
+		QString content = generateContent();
+
+		QLiteHtmlWidget widget;
+		widget.setResourceHandler([](const QUrl &url) -> QByteArray {
+			if (url.isLocalFile()) {
+				QFile file(url.toLocalFile());
+				if (file.open(QIODevice::ReadOnly))
+					return file.readAll();
+			}
+			return QByteArray();
+		});
+		widget.setUrl(QUrl("file:///", QUrl::TolerantMode));
+		widget.resize(pageSize);
+		widget.setHtml(content);
+		// Force layout/paint pipeline to run without showing the widget.
+		widget.setAttribute(Qt::WA_DontShowOnScreen, true);
+		widget.show();
+		QCoreApplication::processEvents();
+
+		QPainter painter(paintDevice);
+		static_cast<QWidget &>(widget).render(&painter, QPoint(),
+			QRegion(0, 0, pageSize.width(), pageSize.height()));
+		painter.end();
+
+		widget.hide();
+#else
 		TemplateLayout t(printOptions, templateOptions);
 
 		pageSize.setHeight(paintDevice->height());
 		pageSize.setWidth(paintDevice->width());
-#ifndef USE_QLITEHTML
 		webView->page()->setViewportSize(pageSize);
-#endif
 		// initialize the border settings
 		// templateOptions.border_width = std::max(1, pageSize.width() / 1000);
-#ifndef USE_QLITEHTML
 		if (printOptions.type == print_options::DIVELIST)
 			webView->setHtml(t.generate(getDives()));
 		else if (printOptions.type == print_options::STATISTICS )
 			webView->setHtml(t.generateStatistics());
-#endif
 		bool ok;
 		int divesPerPage;
-#ifndef USE_QLITEHTML
 		divesPerPage = webView->page()->mainFrame()->findFirstElement("body").attribute("data-numberofdives").toInt(&ok);
-#else
-		divesPerPage = 1;   // FIXME
-		ok = true;
-#endif
 		if (!ok) {
 			divesPerPage = 1; // print each dive in a single page if the attribute is missing or malformed
 			//TODO: show warning
@@ -631,6 +709,7 @@ void Printer::previewOnePage()
 		} else {
 			render(1);
 		}
+#endif
 	}
 }
 
