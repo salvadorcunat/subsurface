@@ -26,6 +26,10 @@
 #include <cstdint>
 #include <cstdio>
 
+#include <map>
+
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -36,7 +40,10 @@
 #include "divelog.h"
 #include "divesite.h"
 #include "errorhelper.h"
+#include "extradata.h"
+#include "file.h"
 #include "gettext.h"
+#include "libdivecomputer.h"
 #include "sample.h"
 #include "subsurface-time.h"
 
@@ -590,8 +597,72 @@ static void parse_gases(const QJsonObject &header, const QJsonArray &samples,
 	}
 }
 
+// AI-generated (Claude)
+/* The Suunto app also exports a FIT file (same base name, different
+ * extension) alongside the JSON for the same dive. The FIT file carries
+ * the gas mix (via the FIT DIVE_GAS message) and gradient factors (via
+ * the FIT DIVE_SETTINGS message) that the Ocean's JSON export doesn't
+ * include, but its own sample stream is far sparser than the JSON's (no
+ * NDL, ceiling, gas-switch events, or tank pressure). So instead of
+ * importing the FIT as a separate dive, parse it into a throwaway dive
+ * via the existing generic libdivecomputer/Garmin path and copy just the
+ * gas mix and gradient factors onto the JSON-derived dive, which stays
+ * the authoritative source for the profile itself. */
+static void patch_from_fit(const std::string &fit_buffer, struct dive *d, struct divelog *log)
+{
+	if (fit_buffer.empty())
+		return;
+
+	device_data_t devdata;
+	devdata.log = log;
+	if (!prepare_device_descriptor(0, DC_FAMILY_GARMIN, devdata)) {
+		report_info("Suunto JSON: could not set up FIT parser, gas mix from JSON kept as-is");
+		return;
+	}
+
+	auto fit_dive = std::make_unique<dive>();
+	dc_status_t rc = libdc_buffer_parser(fit_dive.get(), &devdata,
+					      (const unsigned char *)fit_buffer.data(),
+					      fit_buffer.size());
+	if (rc != DC_STATUS_SUCCESS) {
+		report_info("Suunto JSON: paired FIT file failed to parse (%s), gas mix from JSON kept as-is",
+			    errmsg(rc));
+		return;
+	}
+
+	/* Gas mix: only gas/cylinder 0 is patched, matching the JSON side's
+	 * current single-gas, single-cylinder limitation for the Ocean (see
+	 * file header). If the FIT reports more gases than that, warn instead
+	 * of silently guessing at a mapping between the JSON's gas-switch-order
+	 * indexing and the FIT's native gas ordering. */
+	if (!fit_dive->cylinders.empty()) {
+		cylinder_t *cyl = d->get_or_create_cylinder(0);
+		cyl->gasmix = fit_dive->cylinders[0].gasmix;
+		cyl->cylinder_use = fit_dive->cylinders[0].cylinder_use;
+
+		if (fit_dive->cylinders.size() > 1)
+			report_info("Suunto JSON: paired FIT file has %u gas mixes; only gas 0 "
+				    "was applied (multi-gas Ocean import is not yet supported)",
+				    (unsigned)fit_dive->cylinders.size());
+	}
+
+	/* Gradient factors: libdivecomputer's Garmin parser surfaces the FIT
+	 * DIVE_SETTINGS gf_low/gf_high as a "Deco model" extra_data string of
+	 * the form "Buhlmann ZHL-16C <low>/<high>". */
+	for (const extra_data &ed : fit_dive->dcs[0].extra_data) {
+		if (ed.key != "Deco model")
+			continue;
+		unsigned gf_low = 0, gf_high = 0;
+		if (sscanf(ed.value.c_str(), "Buhlmann ZHL-16C %u/%u", &gf_low, &gf_high) == 2) {
+			add_extra_data(&d->dcs[0], "GF Low", std::to_string(gf_low));
+			add_extra_data(&d->dcs[0], "GF High", std::to_string(gf_high));
+		}
+		break;
+	}
+}
+
 // Import a Suunto JSON file into the divelog.
-int suunto_json_import(const std::string &buffer, struct divelog *log)
+int suunto_json_import(const std::string &buffer, const std::string &fit_buffer, struct divelog *log)
 {
 	QByteArray raw_data = QByteArray::fromRawData(buffer.data(), buffer.size());
 	QJsonDocument doc = QJsonDocument::fromJson(raw_data);
@@ -640,6 +711,53 @@ int suunto_json_import(const std::string &buffer, struct divelog *log)
 	if (d->cylinders.empty())
 		d->get_or_create_cylinder(0);
 
+	patch_from_fit(fit_buffer, d.get(), log);
+
 	log->dives.record_dive(std::move(d));
 	return 1;
+}
+
+// AI-generated (Claude)
+void suunto_json_fit_pair_import(const std::vector<std::string> &fileNames, std::vector<bool> &consumed, struct divelog *log)
+{
+	/* The Suunto app exports a .json and a .fit file with the same base
+	 * name for the same dive. If the caller selected both, merge them into
+	 * a single suunto_json_import() call so the JSON's richer profile and
+	 * the FIT's gas mix/gradient factors end up on one dive, instead of
+	 * two unrelated dives. Only exact, case-insensitive base-name matches
+	 * within fileNames are paired -- no scanning the filesystem for a
+	 * sibling file that wasn't explicitly selected. */
+	struct SuuntoPair {
+		size_t jsonIdx = std::string::npos;
+		size_t fitIdx = std::string::npos;
+	};
+	std::map<QString, SuuntoPair> pairs;
+	for (size_t i = 0; i < fileNames.size(); ++i) {
+		QFileInfo fi(QString::fromStdString(fileNames[i]));
+		QString suffix = fi.suffix().toLower();
+		if (suffix != "json" && suffix != "fit")
+			continue;
+		SuuntoPair &pair = pairs[fi.completeBaseName().toLower()];
+		if (suffix == "json")
+			pair.jsonIdx = i;
+		else
+			pair.fitIdx = i;
+	}
+
+	for (const auto &[stem, pair]: pairs) {
+		if (pair.jsonIdx == std::string::npos || pair.fitIdx == std::string::npos)
+			continue; // not a complete pair -- both files import individually in the caller
+		std::string jsonEncoded = QFile::encodeName(QString::fromStdString(fileNames[pair.jsonIdx])).toStdString();
+		std::string fitEncoded = QFile::encodeName(QString::fromStdString(fileNames[pair.fitIdx])).toStdString();
+		auto [jsonBuf, jerr] = readfile(jsonEncoded.c_str());
+		auto [fitBuf, ferr] = readfile(fitEncoded.c_str());
+		if (jerr <= 0)
+			continue; // couldn't read the JSON -- fall through to the normal per-file import in the caller
+		if (ferr <= 0)
+			report_info("Suunto import: could not read paired FIT file '%s', importing gas mix from JSON as-is",
+				    fileNames[pair.fitIdx].c_str());
+		suunto_json_import(jsonBuf, ferr > 0 ? fitBuf : std::string(), log);
+		consumed[pair.jsonIdx] = true;
+		consumed[pair.fitIdx] = true;
+	}
 }

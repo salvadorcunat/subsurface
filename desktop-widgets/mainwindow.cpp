@@ -176,6 +176,7 @@ MainWindow::MainWindow() :
 		QIcon::setThemeName("subsurface");
 	}
 	connect(diveList.get(), &DiveListView::divesSelected, this, &MainWindow::divesSelected);
+	connect(mainTab.get(), &MainTab::dcChangeRequested, this, &MainWindow::selectDC);
 	connect(&diveListNotifier, &DiveListNotifier::settingsChanged, this, &MainWindow::readSettings);
 	for (int i = 0; i < NUM_RECENT_FILES; i++) {
 		actionsRecent[i] = new QAction(this);
@@ -839,6 +840,13 @@ void MainWindow::on_actionNextDC_triggered()
 	mainTab->updateDiveInfo(getDiveSelection(), profile->d, profile->dc);
 }
 
+void MainWindow::selectDC(int dc)
+{
+	if (profile->d)
+		profile->plotDive(profile->d, dc);
+	mainTab->updateDiveInfo(getDiveSelection(), profile->d, profile->dc);
+}
+
 void MainWindow::on_actionFullScreen_triggered(bool checked)
 {
 	if (checked) {
@@ -1311,9 +1319,13 @@ void MainWindow::importFiles(const std::vector<std::string> &fileNames)
 		return;
 
 	struct divelog log;
+	std::vector<bool> consumed(fileNames.size(), false);
+	suunto_json_fit_pair_import(fileNames, consumed, &log);
 
-	for (const std::string &fn: fileNames) {
-		std::string encoded = encodeFileName(fn);
+	for (size_t i = 0; i < fileNames.size(); ++i) {
+		if (consumed[i])
+			continue;
+		std::string encoded = encodeFileName(fileNames[i]);
 		parse_file(encoded.c_str(), &log);
 	}
 	QString source = fileNames.size() == 1 ? QString::fromStdString(fileNames[0]) : tr("multiple files");
