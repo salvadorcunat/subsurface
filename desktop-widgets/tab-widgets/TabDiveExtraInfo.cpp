@@ -121,10 +121,10 @@ void TabDiveExtraInfo::populateSerialCombo(const QString &modelName, int selecte
 	for (int n = 0; n < group.size(); ++n) {
 		const DCEntry &e = group[n];
 		QString label;
-		if (e.serial.isEmpty())
-			label = tr("(no serial) #%1").arg(n + 1);
-		else if (serialCount.value(e.serial) > 1)
-			label = tr("%1 (#%2)").arg(e.serial).arg(n + 1);
+		if (serialCount.value(e.serial) > 1)
+			label = e.serial.isEmpty()
+				? tr("(no serial) #%1").arg(n + 1)
+				: tr("%1 (#%2)").arg(e.serial).arg(n + 1);
 		else
 			label = e.serial;
 		ui->serialCombo->addItem(label, e.index); // item data = DC index
@@ -171,7 +171,10 @@ void TabDiveExtraInfo::updateData(const std::vector<dive *> &, dive *currentDive
 
 	// --- Remaining read-only fields ---
 	ui->firmware->setText(QString::fromStdString(dc->fw_version).trimmed());
-	ui->date->setText(get_dive_date_string(dc->when));
+	QString dateStr = get_dive_date_string(dc->when);
+	if (dc->timezone_offset != TIMEZONE_OFFSET_INVALID)
+		dateStr += tr(" (UTC%1)").arg(format_timezone_offset(dc->timezone_offset));
+	ui->date->setText(dateStr);
 	ui->duration->setText(get_dive_duration_string(dc->duration.seconds, tr("h"), tr("min"), tr("sec"),
 			" ", dc->divemode == FREEDIVE));
 	if (dc->divemode >= 0 && dc->divemode < NUM_DIVEMODE)
