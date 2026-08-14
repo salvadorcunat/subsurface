@@ -688,7 +688,7 @@ static void fixup_dc_events(struct dive &dive, struct divecomputer &dc)
 			current_divemode = get_effective_divemode(dc, *current_cylinder);
 		} else if (event.is_divemodechange()) {
 			new_divemode = static_cast<divemode_t>(event.value);
-			if (!((dc.divemode == CCR && prefs.allowOcGasAsDiluent && current_cylinder->cylinder_use == OC_GAS) || dc.divemode == PSCR)) {
+			if (!((dc.divemode == CCR && prefs.allowOcGasAsDiluent && is_oc(*current_cylinder)) || dc.divemode == PSCR)) {
 				to_delete.push_back(idx);
 				continue;
 			} else if (new_divemode != current_divemode) {
@@ -1036,7 +1036,7 @@ int check_dc_cylinder_use(struct dive &dive, struct divecomputer &dc)
 		return 1;
 
 	for (auto &cylinder: dive.cylinders)
-		if ((dc.divemode == CCR && cylinder.cylinder_use == DILUENT) || ((dc.divemode == PSCR || dc.divemode == OC) && cylinder.cylinder_use == OC_GAS))
+		if ((dc.divemode == CCR && cylinder.cylinder_use == DILUENT) || ((dc.divemode == PSCR || dc.divemode == OC) && is_oc(cylinder)))
 			return 1;
 
 	return report_error("Dive: %u, dive computer: %s: %s dive, but no %s cylinder found. Please add or select the correct cylinder use.", dive.number, dc.model.c_str(), dc.divemode == OC ? "open circuit" : dc.divemode == CCR ? "CCR" : "PSCR", dc.divemode == OC ? "open circuit" : dc.divemode == CCR ? "diluent" : "drive gas");
@@ -1698,6 +1698,7 @@ bool is_cylinder_use_appropriate(const struct divecomputer &dc, const cylinder_t
 {
 	switch (cyl.cylinder_use) {
 	case OC_GAS:
+	case TRAVEL_OC:
 		if (dc.divemode == FREEDIVE)
 			return false;
 
@@ -1726,7 +1727,7 @@ bool is_cylinder_use_appropriate(const struct divecomputer &dc, const cylinder_t
 divemode_t get_effective_divemode(const struct divecomputer &dc, const struct cylinder_t &cylinder)
 {
 	divemode_t divemode = dc.divemode;
-	if (divemode == CCR && cylinder.cylinder_use == OC_GAS)
+	if (divemode == CCR && is_oc(cylinder))
 		divemode = OC;
 
 	return divemode;
@@ -1857,21 +1858,34 @@ static void merge_cylinders(struct dive &res, const struct dive &a, const struct
 	}
 }
 
-/* Check whether a weightsystem table contains a given weightsystem */
-static bool has_weightsystem(const weightsystem_table &t, const weightsystem_t &w)
-{
-	return any_of(t.begin(), t.end(), [&w] (auto &w2) { return w == w2; });
-}
-
 static void merge_equipment(struct dive &res, const struct dive &a, const struct dive &b)
 {
-	for (auto &ws: a.weightsystems) {
-		if (!has_weightsystem(res.weightsystems, ws))
-			res.weightsystems.push_back(ws);
+	/* Produce the multiset union of the two weightsystem lists:
+	 * For each distinct weightsystem, include max(count_in_a, count_in_b) copies.
+	 * This means:
+	 * - Weights that exist only in one dive are kept as-is.
+	 * - Weights that are identical in both dives are de-duplicated.
+	 * - If one dive has more copies of a weight than the other, the higher
+	 *   count is kept (rather than adding them all up, which would be wrong).
+	 */
+	// Track which entries in b have already been "consumed" by a match in a.
+	std::vector<bool> b_matched(b.weightsystems.size(), false);
+
+	for (const auto &ws_a: a.weightsystems) {
+		res.weightsystems.push_back(ws_a);
+		// Mark one matching entry in b as consumed, so it doesn't get added again.
+		for (size_t j = 0; j < b.weightsystems.size(); ++j) {
+			if (!b_matched[j] && b.weightsystems[j] == ws_a) {
+				b_matched[j] = true;
+				break;
+			}
+		}
 	}
-	for (auto &ws: b.weightsystems) {
-		if (!has_weightsystem(res.weightsystems, ws))
-			res.weightsystems.push_back(ws);
+	// Add any unmatched entries from b (i.e. those not present in a at all, or
+	// present fewer times in a than in b).
+	for (size_t j = 0; j < b.weightsystems.size(); ++j) {
+		if (!b_matched[j])
+			res.weightsystems.push_back(b.weightsystems[j]);
 	}
 }
 
