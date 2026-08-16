@@ -681,8 +681,14 @@ dc_status_t qt_ble_open(void **io, dc_context_t *, const char *devaddr, device_d
 	//
 	// NOTE: this MAC-based fallback must NOT be used on macOS/iOS, where
 	// CoreBluetooth identifies peripherals by UUID rather than MAC address.
+	// On those platforms address() is always null -- only check isValid().
 	//
+	// AI-generated (Claude)
+#if defined(Q_OS_MACOS) || defined(Q_OS_IOS)
+	if (!remoteDevice.isValid()) {
+#else
 	if (!remoteDevice.isValid() || remoteDevice.address().isNull()) {
+#endif
 #if defined(Q_OS_ANDROID)
 		QBluetoothAddress addr{QString(devaddr)};
 		if (addr.isNull()) {
@@ -955,7 +961,17 @@ dc_status_t BLEObject::read_characteristic(const QBluetoothUuid &uuid, char *res
 		}
 		report_info("Reading BLE characteristic %s", to_str(uuid).c_str());
 		s->readCharacteristic(ch);
-		QByteArray val = ch.value();
+		// AI-generated (Claude)
+		// readCharacteristic() is asynchronous: the value arrives via
+		// characteristicRead -> characteristcStateChanged -> receivedPackets.
+		// Wait for it and consume it here so it does not leak into the
+		// data-transfer queue used by subsequent dc_iostream_read calls.
+		WAITFOR(!receivedPackets.isEmpty(), timeout);
+		if (receivedPackets.isEmpty()) {
+			report_error("Timeout reading characteristic %s", to_str(uuid).c_str());
+			return DC_STATUS_TIMEOUT;
+		}
+		QByteArray val = receivedPackets.takeFirst();
 		if ((size_t)val.size() != size) {
 			report_error("Unexpected read characteristic size (%lld): expected %lld", (long long)val.size(), (long long)size);
 			return DC_STATUS_DATAFORMAT;
