@@ -5,8 +5,10 @@
 #include "commands/command.h"
 #include "core/divelog.h"
 #include "core/pref.h"
+#include "core/string-format.h"
 #include "core/units.h"
 #include <QSignalSpy>
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -127,6 +129,189 @@ void TestDivePlannerModel::testSurfaceAirCylinderDataAccess()
 	QCOMPARE(gas.toString(), QStringLiteral("AIR"));
 
 	model->resetPlanState();
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testImportMissingCylinderDepth()
+{
+	prefs = default_prefs;
+	dive importedDive;
+	cylinder_t cylinder;
+	cylinder.gasmix.o2 = 50_percent;
+	importedDive.cylinders.push_back(cylinder);
+	depth_t expected = calculate_deco_switch_depth(&importedDive, cylinder.gasmix);
+
+	normalize_imported_cylinder_depths(&importedDive);
+
+	QVERIFY(expected.mm != 0);
+	QCOMPARE(importedDive.cylinders[0].depth.mm, expected.mm);
+	prefs = default_prefs;
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testImportedCylinderDepthPreserved()
+{
+	prefs = default_prefs;
+	dive importedDive;
+	cylinder_t cylinder;
+	cylinder.gasmix.o2 = 50_percent;
+	cylinder.depth = 12_m;
+	importedDive.cylinders.push_back(cylinder);
+
+	normalize_imported_cylinder_depths(&importedDive);
+
+	QCOMPARE(importedDive.cylinders[0].depth.mm, 12000);
+	prefs = default_prefs;
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testCylinderDepthInput()
+{
+	DivePlannerPointsModel *model = DivePlannerPointsModel::instance();
+	dive plannedDive;
+	prefs = default_prefs;
+	prefs.unit_system = METRIC;
+	prefs.units = SI_units;
+	model->setPlanMode(DivePlannerPointsModel::PLAN);
+	model->createSimpleDive(&plannedDive);
+
+	CylindersModel *cylinders = model->cylindersModel();
+	QModelIndex depthIndex = cylinders->index(0, CylindersModel::DEPTH);
+	cylinder_t *cylinder = plannedDive.get_cylinder(0);
+	depth_t calculatedDepth = calculate_deco_switch_depth(&plannedDive, cylinder->gasmix);
+
+	QVERIFY(cylinders->setData(depthIndex, QStringLiteral("12 m")));
+	QCOMPARE(cylinder->depth.mm, 12000);
+
+	QVERIFY(cylinders->setData(depthIndex, QString()));
+	QCOMPARE(cylinder->depth.mm, calculatedDepth.mm);
+
+	QVERIFY(cylinders->setData(depthIndex, QStringLiteral("12 m")));
+	QVERIFY(cylinders->setData(depthIndex, QStringLiteral("  \t")));
+	QCOMPARE(cylinder->depth.mm, calculatedDepth.mm);
+
+	QVERIFY(cylinders->setData(depthIndex, QStringLiteral("12 m")));
+	QVERIFY(cylinders->setData(depthIndex, QStringLiteral("0")));
+	QCOMPARE(cylinder->depth.mm, 0);
+	QCOMPARE(cylinders->data(depthIndex, Qt::DisplayRole).toString(), get_depth_string(0_m, true));
+
+	model->resetPlanState();
+	prefs = default_prefs;
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testDecoSwitchDepthValidation()
+{
+	DivePlannerPointsModel *planner = DivePlannerPointsModel::instance();
+	dive plannedDive;
+
+	prefs = default_prefs;
+	prefs.unit_system = METRIC;
+	prefs.units = SI_units;
+	planner->setPlanMode(DivePlannerPointsModel::PLAN);
+	planner->createSimpleDive(&plannedDive);
+	CylindersModel *model = planner->cylindersModel();
+	QModelIndex depthIndex = model->index(0, CylindersModel::DEPTH);
+	cylinder_t *cylinder = plannedDive.get_cylinder(0);
+	QVERIFY(cylinder);
+	depth_t calculatedDepth = calculate_deco_switch_depth(&plannedDive, cylinder->gasmix);
+	QString zeroDepth = get_depth_string(0_m, true);
+
+	cylinder->depth = 15_m;
+	QVERIFY(model->setData(depthIndex, QString()));
+	QCOMPARE(cylinder->depth.mm, calculatedDepth.mm);
+
+	cylinder->depth = 15_m;
+	QVERIFY(model->setData(depthIndex, QStringLiteral("0")));
+	QCOMPARE(cylinder->depth.mm, 0);
+	QCOMPARE(model->data(depthIndex, Qt::DisplayRole).toString(), zeroDepth);
+
+	QVERIFY(model->setData(depthIndex, QStringLiteral("12,5 m")));
+	QCOMPARE(cylinder->depth.mm, 12500);
+	QVERIFY(model->setData(depthIndex, QStringLiteral("41 ft")));
+	QCOMPARE(cylinder->depth.mm, feet_to_mm(41.0));
+
+	QSignalSpy dataChangedSpy(model, &CylindersModel::dataChanged);
+	QVERIFY(!model->setData(depthIndex, QStringLiteral("invalid")));
+	QCOMPARE(cylinder->depth.mm, feet_to_mm(41.0));
+	QCOMPARE(dataChangedSpy.count(), 0);
+	QVERIFY(!model->setData(depthIndex, QStringLiteral("m")));
+	QCOMPARE(cylinder->depth.mm, feet_to_mm(41.0));
+	QCOMPARE(dataChangedSpy.count(), 0);
+	QVERIFY(!model->setData(depthIndex, QStringLiteral("-3 m")));
+	QCOMPARE(cylinder->depth.mm, feet_to_mm(41.0));
+	QCOMPARE(dataChangedSpy.count(), 0);
+
+	planner->resetPlanState();
+	prefs = default_prefs;
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testStoredZeroCylinderDepthDisplay()
+{
+	DivePlannerPointsModel *model = DivePlannerPointsModel::instance();
+	dive plannedDive;
+	prefs = default_prefs;
+	prefs.unit_system = METRIC;
+	prefs.units = SI_units;
+	model->setPlanMode(DivePlannerPointsModel::PLAN);
+	model->createSimpleDive(&plannedDive);
+
+	CylindersModel *cylinders = model->cylindersModel();
+	QModelIndex depthIndex = cylinders->index(0, CylindersModel::DEPTH);
+	plannedDive.cylinders[0].depth = 0_m;
+
+	QCOMPARE(cylinders->data(depthIndex, Qt::DisplayRole).toString(), get_depth_string(0_m, true));
+
+	model->resetPlanState();
+	prefs = default_prefs;
+}
+
+// AI-generated (Claude)
+void TestDivePlannerModel::testZeroDepthExcludesDecoGas()
+{
+	DivePlannerPointsModel *planner = DivePlannerPointsModel::instance();
+	dive plannedDive;
+
+	prefs = default_prefs;
+	prefs.unit_system = METRIC;
+	prefs.units = SI_units;
+	planner->setPlanMode(DivePlannerPointsModel::PLAN);
+	planner->createSimpleDive(&plannedDive);
+	CylindersModel *model = planner->cylindersModel();
+	model->add();
+	QCOMPARE(plannedDive.cylinders.size(), size_t(2));
+	cylinder_t *decoCylinder = plannedDive.get_cylinder(1);
+	QVERIFY(decoCylinder);
+	decoCylinder->cylinder_use = OC_GAS;
+	decoCylinder->gasmix.o2 = make_fraction(500);
+	decoCylinder->depth = 21_m;
+	QModelIndex depthIndex = model->index(1, CylindersModel::DEPTH);
+
+	QVERIFY(model->setData(depthIndex, QStringLiteral("21 m")));
+	planner->emitDataChanged();
+	const diveplan &manualDepthPlan = planner->getDiveplan();
+	QVERIFY(std::any_of(manualDepthPlan.dp.begin(), manualDepthPlan.dp.end(), [](const divedatapoint &point) {
+		return point.time == 0 && !point.entered && point.cylinderid == 1 && point.depth.mm == 21000;
+	}));
+
+	QVERIFY(model->setData(depthIndex, QStringLiteral("0")));
+	planner->emitDataChanged();
+	const diveplan &zeroDepthPlan = planner->getDiveplan();
+	QVERIFY(std::none_of(zeroDepthPlan.dp.begin(), zeroDepthPlan.dp.end(), [](const divedatapoint &point) {
+		return point.time == 0 && !point.entered && point.cylinderid == 1;
+	}));
+
+	decoCylinder->cylinder_use = TRAVEL_OC;
+	decoCylinder->depth = 21_m;
+	planner->emitDataChanged();
+	const diveplan &travelGasPlan = planner->getDiveplan();
+	QVERIFY(std::none_of(travelGasPlan.dp.begin(), travelGasPlan.dp.end(), [](const divedatapoint &point) {
+		return point.time == 0 && !point.entered && point.cylinderid == 1;
+	}));
+
+	planner->resetPlanState();
+	prefs = default_prefs;
 }
 
 // AI-generated (Claude)

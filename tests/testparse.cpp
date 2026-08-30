@@ -9,9 +9,13 @@
 #include "core/import-csv.h"
 #include "core/parse.h"
 #include "core/pref.h"
+#include "core/qthelper.h"
 #include "core/subsurface-string.h"
 #include "core/trip.h"
 #include "core/xmlparams.h"
+#include <libxml/parser.h>
+#include <libxslt/transform.h>
+#include <libxslt/xsltutils.h>
 #include <QTextStream>
 #include <QXmlStreamReader>
 
@@ -453,6 +457,27 @@ void TestParse::exportUDDF()
 	FILE_COMPARE("testuddfexport.uddf", SUBSURFACE_TEST_DATA "/dives/test42.uddf");
 }
 
+// AI-generated (Claude): Regression coverage for interleaved UDDF events and samples.
+void TestParse::exportUDDFEvents()
+{
+	xmlDoc *input = xmlReadFile(SUBSURFACE_TEST_DATA "/dives/test-uddf-export-events.xml", NULL, XML_PARSE_HUGE);
+	QVERIFY(input);
+	xsltStylesheetPtr stylesheet = get_stylesheet("uddf-export.xslt");
+	QVERIFY(stylesheet);
+	const char *params[] = { "units", "'1'", NULL };
+	xmlDoc *output = xsltApplyStylesheet(stylesheet, input, params);
+	QVERIFY(output);
+	QVERIFY(xsltSaveResultToFilename("testuddfevents.uddf", output, stylesheet, 0) > 0);
+	xmlFreeDoc(output);
+	xsltFreeStylesheet(stylesheet);
+	xmlFreeDoc(input);
+	QFile expected(SUBSURFACE_TEST_DATA "/dives/test-uddf-export-events.uddf");
+	QVERIFY(expected.open(QFile::ReadOnly));
+	QFile actual("testuddfevents.uddf");
+	QVERIFY(actual.open(QFile::ReadOnly));
+	QCOMPARE(actual.readAll(), expected.readAll());
+}
+
 static std::vector<const dive_site *> allDiveSites()
 {
 	std::vector<const dive_site *> sites;
@@ -691,6 +716,8 @@ void TestParse::importSuuntoJsonOcean()
 #endif
 	/* Suunto Ocean (codename Porvoo), air dive with tank transmitter on gas 0. */
 	QCOMPARE(parse_file(SUBSURFACE_TEST_DATA "/dives/suunto_ocean_air.json", &divelog), 0);
+	QCOMPARE(divelog.dives.size(), 1);
+	QCOMPARE(divelog.dives[0]->dcs[0].when, divelog.dives[0]->when);
 	QCOMPARE(save_dives("./test_suunto_ocean_air.ssrf"), 0);
 	FILE_COMPARE("./test_suunto_ocean_air.ssrf",
 		SUBSURFACE_TEST_DATA "/dives/suunto_ocean_air.xml");

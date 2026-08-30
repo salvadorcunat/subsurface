@@ -40,7 +40,21 @@ struct git_info {
 	~git_info();
 };
 
-extern std::string saved_git_id;
+// AI-generated (Claude)
+// Decide, without touching the repository, whether an ordinary save to this
+// git destination would REPLACE data the in-memory log is not based on.
+// Compare the commit we loaded (loaded_git_commit) with the destination branch
+// tip: if the loaded commit is the tip or an ancestor of it the save is a
+// normal same-source save; a new or empty branch is safe initial population;
+// otherwise the save would overwrite unrelated cloud data and needs confirmation.
+enum class git_save_kind {
+	normal,      // same-source save, or new/empty branch: write proceeds directly
+	replacement, // non-empty destination the log is not based on: caller must confirm
+	error,       // could not inspect the destination repository: save must not proceed
+};
+extern git_save_kind classify_git_save(const struct git_info *info);
+
+extern std::string loaded_git_commit;
 extern std::string get_sha(git_repository *repo, const std::string &branch);
 extern std::string get_local_dir(const std::string &, const std::string &);
 extern bool is_git_repository(const char *filename, struct git_info *info);

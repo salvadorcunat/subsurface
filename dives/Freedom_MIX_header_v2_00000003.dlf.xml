@@ -5,9 +5,9 @@
 </divesites>
 <dives>
 <dive date='2023-06-30' time='10:27:49' duration='72:46 min'>
-  <cylinder size='12.0 l' workpressure='200.0 bar' description='unknown' />
-  <cylinder description='unknown' o2='100.0%' use='oxygen' />
-  <cylinder description='unknown' o2='14.0%' he='32.0%' use='diluent' />
+  <cylinder size='12.0 l' workpressure='200.0 bar' description='unknown' depth='66.0 m' />
+  <cylinder description='unknown' o2='100.0%' use='oxygen' depth='6.0 m' />
+  <cylinder description='unknown' o2='14.0%' he='32.0%' use='diluent' depth='105.0 m' />
   <divecomputer model='Divesoft Freedom (Imported from file)' dctype='CCR'>
   <depth max='53.64 m' mean='19.602 m' />
   <temperature water='5.1 C' />
@@ -15,7 +15,7 @@
   <water salinity='1000 g/l' />
   <extradata key='Time offset from UTC [s]' value='+3600' />
   <event time='0:00 min' type='25' flags='3' name='gaschange' cylinder='2' o2='14.0%' he='32.0%' />
-  <sample time='0:00 min' depth='1.71 m' temp='23.3 C' ndl='1000:00 min' dc_supplied_ppo2='1.148 bar' po2='0.5 bar' />
+  <sample time='0:00 min' depth='1.71 m' temp='23.3 C' ndl='1000:00 min' dc_supplied_ppo2='1.148 bar' />
   <sample time='0:01 min' depth='1.78 m' dc_supplied_ppo2='1.156 bar' />
   <sample time='0:02 min' depth='1.8 m' dc_supplied_ppo2='1.157 bar' />
   <sample time='0:03 min' depth='1.84 m' dc_supplied_ppo2='1.162 bar' />
