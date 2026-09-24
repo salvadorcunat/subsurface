@@ -260,7 +260,34 @@ if(NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT SUBSURFACE_TARGE
 			set(LIBRAW_FOUND TRUE)
 			LIST(APPEND SUBSURFACE_LINK_LIBRARIES libraw::raw_r)
 		endif()
-		# libmtp is not available via vcpkg, skip for now
+		set(LIBMTP_FOUND FALSE)
+ 		unset(LIBMTP_LIBRARIES)
+
+		find_path(LIBMTP_INCLUDE_DIR libmtp.h
+			PATHS "${_VCPKG_PREFIX}/include"
+			NO_DEFAULT_PATH)
+		find_library(LIBMTP_LIBRARY_RELEASE
+			NAMES libmtp mtp
+			PATHS "${_VCPKG_PREFIX}/lib"
+			NO_DEFAULT_PATH)
+		find_library(LIBMTP_LIBRARY_DEBUG
+			NAMES libmtp mtp
+			PATHS "${_VCPKG_PREFIX}/debug/lib"
+			NO_DEFAULT_PATH)
+		if(LIBMTP_INCLUDE_DIR AND (LIBMTP_LIBRARY_RELEASE OR LIBMTP_LIBRARY_DEBUG))
+			set(LIBMTP_FOUND TRUE)
+			unset(LIBMTP_LIBRARIES)
+			if(LIBMTP_LIBRARY_RELEASE AND LIBMTP_LIBRARY_DEBUG)
+				list(APPEND LIBMTP_LIBRARIES optimized "${LIBMTP_LIBRARY_RELEASE}" debug "${LIBMTP_LIBRARY_DEBUG}")
+			elseif(LIBMTP_LIBRARY_RELEASE)
+				list(APPEND LIBMTP_LIBRARIES "${LIBMTP_LIBRARY_RELEASE}")
+			else()
+				list(APPEND LIBMTP_LIBRARIES "${LIBMTP_LIBRARY_DEBUG}")
+			endif()
+			list(APPEND LIBMTP_LIBRARIES ole32 portabledeviceguids propsys)
+			include_directories(${LIBMTP_INCLUDE_DIR})
+			message(STATUS "libmtp found: ${LIBMTP_LIBRARIES}")
+		endif()
 	else()
 		pkg_config_library(LIBUSB libusb-1.0 QUIET)
 		pkg_config_library(LIBMTP libmtp QUIET)
@@ -277,6 +304,13 @@ include_directories(.
 # decide what to do about Qt
 # this is messy because we want to support older Qt5 versions, newer Qt5 versions,
 # and Qt6 when enabled / available.
+#
+# The mobile QML UI (mobile-widgets/qml) already uses a Qt6-only Kirigami version
+# so mobile builds always need Qt6 - select it automatically instead of requiring
+# the user to also pass -DBUILD_WITH_QT6=ON.
+if(SUBSURFACE_TARGET_EXECUTABLE MATCHES "MobileExecutable")
+	set(BUILD_WITH_QT6 ON)
+endif()
 if(BUILD_WITH_QT6)
 	set(CHECK_QT6 "Qt6")
 endif()
@@ -384,6 +418,26 @@ if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
 		endif()
 	endif()
 elseif (SUBSURFACE_TARGET_EXECUTABLE MATCHES "MobileExecutable")
+	# Qt6 is selected automatically above; this only catches the case where
+	# Qt6 itself isn't installed and find_package() fell back to Qt5.
+	if(NOT USINGQT6)
+		message(FATAL_ERROR "Building Subsurface-mobile requires Qt6, but only Qt5 was found.")
+	endif()
+	# The Kirigami version we use requires Qt 6.8.0, and the edge-to-edge handling
+	# that we need on Android devices (but not on iOS / desktop) relies on SafeArea.margins,
+	# which only exists from Qt 6.9 onward - so for Android Qt 6.9.0 is our real floor.
+	# Enforce it here so the failure is reported against Subsurface's own configure step \
+	# instead of failing confusingly later.
+	if(QT_VERSION VERSION_LESS 6.8.0)
+		message(FATAL_ERROR "Building Subsurface-mobile requires Qt 6.8.0 or newer, found ${QT_VERSION}.")
+	endif()
+	if(ANDROID AND QT_VERSION VERSION_LESS 6.9.0)
+		message(FATAL_ERROR "Building Subsurface-mobile for Android requires Qt 6.9.0 or newer, found ${QT_VERSION}.")
+	endif()
+	if(NOT (ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS"))
+		# add definition to seperate mobile for devices and for desktop
+		add_definitions(-DSUBSURFACE_MOBILE_DESKTOP)
+	endif()
 	if(APPLE)
 		set(SUBSURFACE_TARGET Subsurface-mobile)
 	else()
@@ -392,9 +446,6 @@ elseif (SUBSURFACE_TARGET_EXECUTABLE MATCHES "MobileExecutable")
 	list(APPEND QT_EXTRA_COMPONENTS QuickControls2)
 	list(APPEND QT_EXTRA_COMPONENTS QuickWidgets)
 	add_definitions(-DSUBSURFACE_MOBILE)
-
-	# add definition to seperate mobile for devices and for desktop
-	add_definitions(-DSUBSURFACE_MOBILE_DESKTOP)
 
 	message(STATUS "Building Subsurface-mobile requires BT support")
 	set(BTSUPPORT ON)
@@ -1053,38 +1104,37 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		# For MSVC builds, use windeployqt to copy Qt dependencies
 		# and copy vcpkg DLLs
 		find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_INSTALL_PREFIX}/bin")
-		if(WINDEPLOYQT_EXECUTABLE)
-			message(STATUS "Found windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
-			install(CODE "
-				message(STATUS \"Running windeployqt on ${WINDOWSSTAGING}/${SUBSURFACE_TARGET}.exe\")
-				execute_process(
-					COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
-						--verbose 1
-						--no-opengl-sw
-						--no-system-d3d-compiler
-						--qmldir \"${CMAKE_SOURCE_DIR}/mobile-widgets/qml\"
-						--qmldir \"${CMAKE_SOURCE_DIR}/map-widget\"
-						--qmldir \"${CMAKE_SOURCE_DIR}/stats\"
-						\"${WINDOWSSTAGING}/${SUBSURFACE_TARGET}.exe\"
-					WORKING_DIRECTORY \"${WINDOWSSTAGING}\"
-					RESULT_VARIABLE _windeployqt_result
-					OUTPUT_VARIABLE _windeployqt_output
-					ERROR_VARIABLE _windeployqt_error
-				)
-				message(STATUS \"windeployqt result: \${_windeployqt_result}\")
-				if(_windeployqt_output)
-					message(STATUS \"windeployqt output: \${_windeployqt_output}\")
-				endif()
-				if(_windeployqt_error)
-					message(STATUS \"windeployqt errors: \${_windeployqt_error}\")
-				endif()
-				if(NOT _windeployqt_result EQUAL 0)
-					message(WARNING \"windeployqt failed with code \${_windeployqt_result}\")
-				endif()
-			")
-		else()
-			message(WARNING "windeployqt not found - Qt DLLs will not be copied automatically")
+		if(NOT WINDEPLOYQT_EXECUTABLE)
+			message(FATAL_ERROR "windeployqt was not found. Expected it under ${QT_INSTALL_PREFIX}/bin; install Qt's deployment tools.")
 		endif()
+		message(STATUS "Found windeployqt: ${WINDEPLOYQT_EXECUTABLE}")
+		install(CODE "
+			message(STATUS \"Running windeployqt on ${WINDOWSSTAGING}/${SUBSURFACE_TARGET}.exe\")
+			execute_process(
+				COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
+					--verbose 1
+					--no-opengl-sw
+					--no-system-d3d-compiler
+					--qmldir \"${CMAKE_SOURCE_DIR}/mobile-widgets/qml\"
+					--qmldir \"${CMAKE_SOURCE_DIR}/map-widget\"
+					--qmldir \"${CMAKE_SOURCE_DIR}/stats\"
+					\"${WINDOWSSTAGING}/${SUBSURFACE_TARGET}.exe\"
+				WORKING_DIRECTORY \"${WINDOWSSTAGING}\"
+				RESULT_VARIABLE _windeployqt_result
+				OUTPUT_VARIABLE _windeployqt_output
+				ERROR_VARIABLE _windeployqt_error
+			)
+			if(NOT _windeployqt_result EQUAL 0)
+				message(FATAL_ERROR
+					\"windeployqt failed with code \${_windeployqt_result}.\\n\"
+					\"Output:\\n\${_windeployqt_output}\\n\"
+					\"Error output:\\n\${_windeployqt_error}\")
+			endif()
+			message(STATUS \"windeployqt output:\\n\${_windeployqt_output}\")
+			if(_windeployqt_error)
+				message(STATUS \"windeployqt error output:\\n\${_windeployqt_error}\")
+			endif()
+		")
 
 		# Manually copy Qt6 core DLLs.
 		# windeployqt requires Qt6ShaderTools.dll (a transitive dependency of Qt6Quick
@@ -1094,6 +1144,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		# To avoid this, we copy the Qt6 DLLs that Subsurface actually uses explicitly.
 		# This list intentionally excludes Qt6WebEngine*.dll (100+ MB each) and debug DLLs.
 		if(USINGQT6)
+			if(MAPSUPPORT)
+				set(_required_map_qt6_dlls Qt6Location Qt6Positioning Qt6PositioningQuick)
+			else()
+				set(_required_map_qt6_dlls "")
+			endif()
 			install(CODE "
 				message(STATUS \"Copying Qt6 core DLLs from ${QT_INSTALL_PREFIX}/bin...\")
 				# Core Qt6 libraries required by Subsurface (release builds only)
@@ -1106,8 +1161,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 					Qt6QmlNetwork Qt6QmlWorkerScript
 					Qt6Quick Qt6QuickTemplates2 Qt6QuickControls2 Qt6QuickWidgets
 					Qt6QuickControls2Basic Qt6QuickControls2Impl
-					# Subsurface-specific modules
-					Qt6Location Qt6Positioning Qt6PositioningQuick
+					# Subsurface-specific modules that are not map-only
 					Qt6Bluetooth Qt6WebChannel Qt6Core5Compat
 					Qt6PrintSupport
 				)
@@ -1119,7 +1173,32 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 						message(STATUS \"  Note: \${_dll_base}.dll not found at ${QT_INSTALL_PREFIX}/bin (optional or not installed)\")
 					endif()
 				endforeach()
+				# AI-generated (Claude)
+				# Map QML plugins link these libraries, so a map-enabled installer
+				# cannot function without all of them.
+				foreach(_dll_base ${_required_map_qt6_dlls})
+					set(_dll_path \"${QT_INSTALL_PREFIX}/bin/\${_dll_base}.dll\")
+					if(NOT EXISTS \"\${_dll_path}\")
+						message(FATAL_ERROR \"Required map DLL is missing: \${_dll_path}\")
+					endif()
+					file(COPY \"\${_dll_path}\" DESTINATION \"${WINDOWSSTAGING}\")
+				endforeach()
 			")
+			if(MAPSUPPORT)
+				# AI-generated (Claude)
+				# Copy these complete trees independently of windeployqt: it can omit
+				# QML metadata and plugin DLLs that runtime module loading requires.
+				install(CODE "
+					foreach(_qml_module QtLocation QtPositioning)
+						set(_qml_module_source \"${QT_INSTALL_PREFIX}/qml/\${_qml_module}\")
+						if(NOT IS_DIRECTORY \"\${_qml_module_source}\")
+							message(FATAL_ERROR \"Required map QML module directory is missing: \${_qml_module_source}\")
+						endif()
+						file(MAKE_DIRECTORY \"${WINDOWSSTAGING}/qml\")
+						file(COPY \"\${_qml_module_source}\" DESTINATION \"${WINDOWSSTAGING}/qml\")
+					endforeach()
+				")
+			endif()
 		endif()
 
 		# Manually copy Qt plugins since windeployqt doesn't always work reliably
@@ -1264,20 +1343,20 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		# which would produce a silently-broken installer.  Fail loudly here so CI
 		# produces a red build instead of a green build with a broken artifact.
 		if(USINGQT6)
-			# Qt6Location is optional: only available when map support is enabled.
+			# Map Qt DLLs are required only when map support is enabled.
 			# Resolve this at configure time so the install script has the right list.
 			if(MAPSUPPORT)
-				set(_essential_location_dll "Qt6Location.dll")
+				set(_essential_map_dlls "Qt6Location.dll Qt6Positioning.dll Qt6PositioningQuick.dll")
 			else()
-				set(_essential_location_dll "")
+				set(_essential_map_dlls "")
 			endif()
 			install(CODE "
 				message(STATUS \"Verifying essential Qt6 DLLs in staging directory...\")
-				# _essential_location_dll is expanded at configure time (empty when MAPSUPPORT is OFF)
+				# _essential_map_dlls is expanded at configure time (empty when MAPSUPPORT is OFF)
 				set(_essential_qt6_dlls
 					Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
-					Qt6Qml.dll Qt6Quick.dll Qt6Positioning.dll
-					${_essential_location_dll}
+					Qt6Qml.dll Qt6Quick.dll
+					${_essential_map_dlls}
 				)
 				set(_missing \"\")
 				foreach(_dll \${_essential_qt6_dlls})
@@ -1312,10 +1391,26 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 		DEPENDS ${SUBSURFACE_TARGET}
 	)
 
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND USINGQT6 AND MAPSUPPORT)
+		# AI-generated (Claude)
+		# Keep NSIS behind an explicit, reusable validation target. This also
+		# prevents direct local `ninja installer` invocations from packaging an
+		# incomplete map runtime payload.
+		add_custom_target(
+			validate_windows_msvc_stage
+			COMMAND "${CMAKE_COMMAND}" -DSTAGING=${WINDOWSSTAGING}
+				-P "${CMAKE_SOURCE_DIR}/cmake/Modules/ValidateWindowsMsvcStage.cmake"
+			DEPENDS fake_install
+		)
+		set(_installer_dependencies validate_windows_msvc_stage)
+	else()
+		set(_installer_dependencies fake_install)
+	endif()
+
 	add_custom_target(
 		installer
 		COMMAND ${MAKENSIS} ${WINDOWSSTAGING}/subsurface.nsi
-		DEPENDS fake_install
+		DEPENDS ${_installer_dependencies}
 	)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	# the syntax is odd, but this searches for libqtgeoservices_googlemaps.so
