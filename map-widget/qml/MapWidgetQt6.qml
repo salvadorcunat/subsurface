@@ -156,7 +156,13 @@ Item {
 				map.zoomLevel += Math.log2(delta)
 				map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
 			}
-			grabPermissions: PointerHandler.TakeOverForbidden
+			// CanTakeOverFromAnything lets this handler grab the two-finger
+			// pinch even when the native map surface plugin has already
+			// consumed the touch points.  TakeOverForbidden caused pinch-to-
+			// zoom to fail silently on Android because the QtLocation plugin's
+			// native touch handler grabbed first and the QML handler was never
+			// activated.
+			grabPermissions: PointerHandler.CanTakeOverFromAnything
 		}
 		TapHandler {
 			acceptedButtons: Qt.LeftButton
@@ -186,6 +192,7 @@ Item {
 
 		function stopZoomAnimations() {
 			mapAnimationZoomIn.stop()
+			mapAnimationClick.stop()
 		}
 
 		function centerOnCoordinate(coord) {
@@ -266,6 +273,41 @@ Item {
 		}
 	}
 
+	Canvas {
+		id: centreCrosshair
+		anchors.centerIn: parent
+		width: 80
+		height: 80
+		enabled: false
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			var cx = width / 2
+			var cy = height / 2
+			var arm = 30
+			var gap = 6
+			// Dark outline pass
+			ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"
+			ctx.lineWidth = 3
+			ctx.lineCap = "round"
+			ctx.beginPath()
+			ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - gap, cy)
+			ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + arm, cy)
+			ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - gap)
+			ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + arm)
+			ctx.stroke()
+			// White inner pass
+			ctx.strokeStyle = "rgba(255, 255, 255, 0.85)"
+			ctx.lineWidth = 1.5
+			ctx.beginPath()
+			ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - gap, cy)
+			ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + arm, cy)
+			ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - gap)
+			ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + arm)
+			ctx.stroke()
+		}
+	}
+
 	Rectangle {
 		id: editMessage
 		radius: padding
@@ -314,50 +356,65 @@ Item {
 		}
 	}
 
-	Image {
-		id: imageZoomIn
-		x: 10 + (toggleImage.width - imageZoomIn.width) * 0.5; y: toggleImage.y + toggleImage.height + 10
-		width: 20
-		height: 20
-		source: "qrc:///zoom-in-icon"
-		SequentialAnimation {
-			id: imageZoomInAnimation
-			PropertyAnimation { target: imageZoomIn; property: "scale"; from: 1.0; to: 0.8; duration: 120 }
-			PropertyAnimation { target: imageZoomIn; property: "scale"; from: 0.8; to: 1.0; duration: 80 }
-		}
-		MouseArea {
-			anchors.fill: parent
-			onClicked: {
-				map.stopZoomAnimations()
-				map.newCenter = map.center
-				map.newZoom = map.zoomLevel + map.zoomStep
-				if (map.newZoom > map.maximumZoomLevel)
-					map.newZoom = map.maximumZoomLevel
-				mapAnimationClick.restart()
-				imageZoomInAnimation.restart()
+	// Zoom buttons in a dedicated overlay Item so they are immune to map
+	// layout reflows (which displace hit targets on high-DPI Android).
+	Item {
+		id: zoomButtonOverlay
+		anchors.fill: parent
+
+		Image {
+			id: imageZoomIn
+			x: 10 + (toggleImage.width - imageZoomIn.width) * 0.5
+			y: toggleImage.y + toggleImage.height + 10
+			width: 20
+			height: 20
+			source: "qrc:///zoom-in-icon"
+			SequentialAnimation {
+				id: imageZoomInAnimation
+				PropertyAnimation { target: imageZoomIn; property: "scale"; from: 1.0; to: 0.8; duration: 120 }
+				PropertyAnimation { target: imageZoomIn; property: "scale"; from: 0.8; to: 1.0; duration: 80 }
+			}
+			MouseArea {
+				// 44x44 logical-px hit target centred on the 20x20 graphic
+				anchors.centerIn: parent
+				width: 44
+				height: 44
+				onClicked: {
+					map.stopZoomAnimations()
+					map.newCenter = map.center
+					map.newZoom = map.zoomLevel + map.zoomStep
+					if (map.newZoom > map.maximumZoomLevel)
+						map.newZoom = map.maximumZoomLevel
+					mapAnimationClick.restart()
+					imageZoomInAnimation.restart()
+				}
 			}
 		}
-	}
 
-	Image {
-		id: imageZoomOut
-		x: imageZoomIn.x; y: imageZoomIn.y + imageZoomIn.height + 10
-		source: "qrc:///zoom-out-icon"
-		width: 20
-		height: 20
-		SequentialAnimation {
-			id: imageZoomOutAnimation
-			PropertyAnimation { target: imageZoomOut; property: "scale"; from: 1.0; to: 0.8; duration: 120 }
-			PropertyAnimation { target: imageZoomOut; property: "scale"; from: 0.8; to: 1.0; duration: 80 }
-		}
-		MouseArea {
-			anchors.fill: parent
-			onClicked: {
-				map.stopZoomAnimations()
-				map.newCenter = map.center
-				map.newZoom = map.zoomLevel - map.zoomStep
-				mapAnimationClick.restart()
-				imageZoomOutAnimation.restart()
+		Image {
+			id: imageZoomOut
+			x: imageZoomIn.x
+			y: imageZoomIn.y + imageZoomIn.height + 10
+			source: "qrc:///zoom-out-icon"
+			width: 20
+			height: 20
+			SequentialAnimation {
+				id: imageZoomOutAnimation
+				PropertyAnimation { target: imageZoomOut; property: "scale"; from: 1.0; to: 0.8; duration: 120 }
+				PropertyAnimation { target: imageZoomOut; property: "scale"; from: 0.8; to: 1.0; duration: 80 }
+			}
+			MouseArea {
+				// 44x44 logical-px hit target centred on the 20x20 graphic
+				anchors.centerIn: parent
+				width: 44
+				height: 44
+				onClicked: {
+					map.stopZoomAnimations()
+					map.newCenter = map.center
+					map.newZoom = map.zoomLevel - map.zoomStep
+					mapAnimationClick.restart()
+					imageZoomOutAnimation.restart()
+				}
 			}
 		}
 	}

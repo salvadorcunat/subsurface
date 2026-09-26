@@ -23,20 +23,9 @@ jobs:
     uses: ./.github/workflows/documentation-build.yml
 
   compute-version:
-    runs-on: ubuntu-24.04
-    outputs:
-      release_tag: v${{ steps.version_number.outputs.version }}
-    steps:
-    - name: checkout sources
-      uses: actions/checkout@v7
-      with:
-        fetch-depth: 0
-
-    - name: set the version information
-      id: version_number
-      uses: ./.github/actions/manage-version
-      with:
-        nightly-builds-secret: ${{ secrets.NIGHTLY_BUILDS }}
+    uses: ./.github/workflows/compute-version.yml
+    secrets:
+      nightly-builds-secret: ${{ secrets.NIGHTLY_BUILDS }}
 
   build:
     needs: [build-documentation, compute-version]
@@ -101,12 +90,6 @@ jobs:
         enableCrossOsArchive: true
         fail-on-cache-miss: true
 
-    - name: set the version information
-      id: version_number
-      uses: ./.github/actions/manage-version
-      with:
-        nightly-builds-secret: ${{ secrets.NIGHTLY_BUILDS }}
-
     - name: get install-root absolute path
       id: get-install-root
       run: |
@@ -117,7 +100,7 @@ jobs:
       uses: actions/cache@v6
       with:
         path: ${{ steps.get-install-root.outputs.path }}
-        key: macos-deps-${{ runner.arch }}-${{ hashFiles('.github/workflows/mac.yml', 'scripts/build.sh', 'packaging/macosx/build-deps.sh', 'scripts/get-dep-lib.sh') }}
+        key: macos-deps-${{ runner.arch }}-qt${{ matrix.qtversion }}-${{ hashFiles('.github/workflows/mac.yml', 'scripts/build.sh', 'packaging/macosx/build-deps.sh', 'scripts/get-dep-lib.sh') }}
 
     - name: build deps
       id: build-deps
@@ -223,7 +206,7 @@ jobs:
       if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v7
       with:
-        name: Subsurface-MacOS-${{ matrix.arch }}-qt-${{ matrix.qtversion }}-${{ steps.version_number.outputs.version }}
+        name: Subsurface-MacOS-${{ matrix.arch }}-qt-${{ matrix.qtversion }}-${{ needs.compute-version.outputs.version }}
         path: ${{ steps.build.outputs.dmg }}
         compression-level: 0
 
@@ -232,7 +215,7 @@ jobs:
       if: github.event_name == 'push'
       uses: softprops/action-gh-release@v3
       with:
-        tag_name: v${{ steps.version_number.outputs.version }}
+        tag_name: v${{ needs.compute-version.outputs.version }}
         repository: ${{ github.repository_owner }}/nightly-builds
         token: ${{ secrets.NIGHTLY_BUILDS }}
         draft: true
