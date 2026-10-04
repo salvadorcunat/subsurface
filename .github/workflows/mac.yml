@@ -1,5 +1,9 @@
 name: Mac
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     paths-ignore:
@@ -131,6 +135,8 @@ jobs:
 
     - name: build Subsurface
       id: build
+      env:
+        CANONICALVERSION: ${{ needs.compute-version.outputs.version }}
       run: |
         BUILD_EXTRA_ARGS=""
         if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
