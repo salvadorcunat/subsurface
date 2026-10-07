@@ -157,8 +157,44 @@ Kirigami.Page {
 				Layout.minimumHeight: Kirigami.Units.gridUnit * 6
 				selectByMouse: true
 				wrapMode: TextEdit.WrapAtWordBoundaryOrAnywhere
+				property bool firstTime: true
 				onActiveFocusChanged: {
 					tripEditPage.state = "edit"
+				}
+				onPressed: {
+					firstTime = true
+					waitForKeyboard.start()
+				}
+				onCursorRectangleChanged: ensureVisible()
+				// ensure the cursor stays above the keyboard when editing trip notes
+				function ensureVisible() {
+					var flickable = tripEditFlickable
+					var positionInFlickable = tripNotesField.mapToItem(flickable.contentItem, 0, 0)
+					var taY = positionInFlickable.y + cursorRectangle.y
+					// On Android 16+ the window no longer shrinks when the keyboard appears
+					// (edge-to-edge opt-in killed adjustResize), so use the keyboard height
+					// directly to determine how much of the flickable is actually visible.
+					var keyboardH = Qt.inputMethod.visible ? Qt.inputMethod.keyboardRectangle.height : 0
+					var visibleHeight = flickable.height - keyboardH
+					if (taY > flickable.contentY + visibleHeight - 4 * Kirigami.Units.gridUnit)
+						flickable.contentY = Math.max(0, 4 * Kirigami.Units.gridUnit + taY - visibleHeight)
+					while (taY < flickable.contentY)
+						flickable.contentY -= 2 * Kirigami.Units.gridUnit
+				}
+				// give the OS enough time to actually resize the flickable
+				Timer {
+					id: waitForKeyboard
+					interval: 300
+					onTriggered: {
+						if (!Qt.inputMethod.visible) {
+							if (tripNotesField.firstTime) {
+								tripNotesField.firstTime = false
+								restart()
+							}
+							return
+						}
+						tripNotesField.ensureVisible()
+					}
 				}
 			}
 		}
