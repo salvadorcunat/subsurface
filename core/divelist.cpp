@@ -14,6 +14,7 @@
 #include "fulltext.h"
 #include "interpolate.h"
 #include "planner.h"
+#include "po2.h"
 #include "pref.h"
 #include "qthelper.h" // for emit_reset_signal() -> should be removed
 #include "range.h"
@@ -431,17 +432,61 @@ static void add_dive_to_deco(struct deco_state *ds, const struct dive &dive, boo
 {
 	const struct divecomputer &dc = dive.dcs[0];
 
+	// Stop integrating once this dive's own end time is reached, i.e. the
+	// same instant init_decompression() uses (via dive::endtime(), which is
+	// based on this dive::totaltime()) to work out how much surface time to
+	// add *after* this dive. dive::totaltime() is consistently at or beyond
+	// dc_totaltime(dc) (it also takes the dive's fixed-up, duration, which
+	// itself always extends a touch past dc_totaltime()'s deliberately
+	// truncated last-in-water-sample timestamp whenever a trailing run of
+	// surface samples follows it - see dc_totaltime()'s comment), so this
+	// never clips any genuinely in-water time. Without this clip, any
+	// trailing surface samples beyond that point - which real dive
+	// computers commonly log for a while after the diver has surfaced -
+	// would get simulated here *and* simulated again as the surface segment
+	// that follows, double-counting that time as extra off-gassing.
+	int end_time = dive.totaltime().seconds;
+
 	gasmix_loop loop_gas(dive, dc);
 	divemode_loop loop_mode(dc);
+	ccr_po2_loop loop_po2(dc);
 	for (auto [psample, sample]: pairwise_range(dc.samples)) {
 		int t0 = psample.time.seconds;
 		int t1 = sample.time.seconds;
 		int j;
 
-		for (j = t0; j < t1; j++) {
+		if (t0 >= end_time)
+			break;
+
+		// Resolve the PO2 for this sample once, from the end sample, the
+		// same way the live profile does (see ccr_po2_loop): sensor voting
+		// for CCR/PSCR dives that actually carry sensor data, clamped to
+		// ambient at the end sample's depth. The extra dc.no_o2sensors > 0
+		// check (on top of ccr_po2_loop::uses_sensors(), which for CCR dcs
+		// is true regardless of no_o2sensors) keeps sensor-less CCR dives
+		// on the raw, unclamped commanded setpoint: the display path only
+		// ever clamps that fallback to an ambient pressure it recomputes
+		// every second anyway, but here it would otherwise be clamped once
+		// per sample and reused across the whole (coarser) per-second loop
+		// below, which could shift results for sensor-less dives too.
+		int ccpo2 = sample.setpoint.mbar;
+		if (loop_po2.uses_sensors() && dc.no_o2sensors > 0) {
+			pressure_t o2sensor[MAX_O2_SENSORS];
+			for (int k = 0; k < MAX_O2_SENSORS; k++)
+				o2sensor[k].mbar = sample.o2sensor[k].mbar;
+			pressure_t fallback;
+			fallback.mbar = sample.setpoint.mbar;
+			pressure_t ambient;
+			ambient.mbar = dive.depth_to_mbar(sample.depth);
+			ccpo2 = loop_po2.next(o2sensor, fallback, ambient).mbar;
+		}
+
+		// The interpolation basis stays the real (t0, t1) sample span even
+		// when it is clipped below: only how far we walk into it changes.
+		for (j = t0; j < t1 && j < end_time; j++) {
 			depth_t depth = interpolate(psample.depth, sample.depth, j - t0, t1 - t0);
 			[[maybe_unused]] auto [divemode, _cylinder_index, gasmix] = get_dive_status_at(dive, dc, j, &loop_mode, &loop_gas);
-			add_segment(ds, dive.depth_to_bar(depth), *gasmix, 1, sample.setpoint.mbar,
+			add_segment(ds, dive.depth_to_bar(depth), *gasmix, 1, ccpo2,
 				    divemode, dive.sac,
 				    in_planner);
 		}

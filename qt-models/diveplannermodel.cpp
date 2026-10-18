@@ -690,7 +690,54 @@ void DivePlannerPointsModel::setVpmbConservatism(int level)
 void DivePlannerPointsModel::setSurfacePressure(pressure_t pressure)
 {
 	diveplan.surface_pressure = pressure;
+	// plan() initializes tissue loading from d->surface_pressure before it
+	// transfers diveplan.surface_pressure to the dive computer. Keep the
+	// temporary dive in step with a desktop pressure-control edit so its
+	// initial state uses the selected atmospheric pressure too.
+	// Also recompute cylinder switch depths so that createTemporaryPlan()
+	// inserts altitude-correct time-zero gas waypoints.
+	if (d) {
+		updateCylinderDepthsForPressure(pressure);
+		cylinders.emitDataChanged();
+	}
 	emitDataChanged();
+}
+
+void DivePlannerPointsModel::initialiseDesktopPlanSurfacePressure(pressure_t pressure)
+{
+	diveplan.surface_pressure = pressure;
+	if (d) {
+		updateCylinderDepthsForPressure(pressure);
+		cylinders.emitDataChanged();
+	}
+	emitDataChanged();
+}
+
+// Recompute cylinder switch depths after a surface-pressure change.
+// Must be called before d->surface_pressure is updated so that the comparison
+// against the old auto-computed depth identifies non-overridden depths.
+// Cylinders whose depth matched the old auto-computed MOD are recomputed at
+// the new pressure; manually-overridden depths (including an explicit "0"
+// that disables the switch) are left unchanged.
+void DivePlannerPointsModel::updateCylinderDepthsForPressure(pressure_t newPressure)
+{
+	// Record which cylinders currently match the OLD auto-computed MOD.
+	// A cylinder already at depth 0 before this call is an explicit user
+	// override ("switch disabled"), not an auto-derived depth, so it must
+	// not be marked here even though 0 == 0 would otherwise match below.
+	std::vector<bool> wasAutoDerived(d->cylinders.size(), false);
+	for (auto [i, cyl] : enumerated_range(d->cylinders)) {
+		if (cyl.depth.mm != 0 && cyl.depth.mm == calculate_deco_switch_depth(d, cyl.gasmix).mm)
+			wasAutoDerived[i] = true;
+	}
+	d->surface_pressure = newPressure;
+	d->dcs[dcNr].surface_pressure = newPressure;
+	// Recompute depths only for the cylinders marked above; everything else,
+	// including explicit zero overrides, is left untouched.
+	for (auto [i, cyl] : enumerated_range(d->cylinders)) {
+		if (wasAutoDerived[i])
+			cyl.depth = calculate_deco_switch_depth(d, cyl.gasmix);
+	}
 }
 
 void DivePlannerPointsModel::setSalinity(int salinity)
@@ -702,6 +749,42 @@ void DivePlannerPointsModel::setSalinity(int salinity)
 pressure_t DivePlannerPointsModel::getSurfacePressure() const
 {
 	return diveplan.surface_pressure;
+}
+
+// Mobile planner: return effective surface pressure in mbar, treating 0 as
+// "not yet set" and substituting 1013 mbar (sea level) in that case.
+int DivePlannerPointsModel::getMobilePlannerSurfacePressure() const
+{
+	int mbar = diveplan.surface_pressure.mbar;
+	return mbar > 0 ? mbar : 1013;
+}
+
+// Mobile planner: clamp mbar to 689–1100 (desktop ATMPressure range) before storing.
+void DivePlannerPointsModel::setMobilePlannerSurfacePressure(int mbar)
+{
+	mbar = qBound(689, mbar, 1100);
+	setSurfacePressure({ .mbar = mbar });
+}
+
+// Mobile planner: return the altitude corresponding to the current surface pressure,
+// expressed in the active display unit (m or ft).  Pressures above 1013 mbar give a
+// negative altitude; clamp to 0 so the altitude spinner never shows below sea level.
+int DivePlannerPointsModel::getMobilePlannerAltitudeDisplay() const
+{
+	pressure_t p = { .mbar = getMobilePlannerSurfacePressure() };
+	depth_t alt = pressure_to_altitude(p);
+	if (alt.mm < 0)
+		alt.mm = 0;
+	return (int)get_depth_units(alt, nullptr, nullptr);
+}
+
+// Mobile planner: accept altitude in the active display unit, convert to pressure,
+// and store it.  Consistent with setAscratelast6mDisplay() and friends in this model.
+void DivePlannerPointsModel::setMobilePlannerAltitudeDisplay(int displayAlt)
+{
+	depth_t altMm = units_to_depth((double)displayAlt);
+	pressure_t p = altitude_to_pressure(altMm.mm);
+	setMobilePlannerSurfacePressure(p.mbar);
 }
 
 void DivePlannerPointsModel::setLastStop6m(bool value)
@@ -1546,38 +1629,76 @@ QVariantMap DivePlannerPointsModel::calculatePlan(const QVariantList &cylindersD
 		d->cylinders.add(d->cylinders.size(), newCyl);
 	}
 	this->cylinders.updateDive(d, dcNr);
+
+	// Initialise surface pressure and salinity before reset_cylinders() and the
+	// OC-gas loop: both call gas_mod() → mbar_to_depth() → rel_mbar_to_depth(),
+	// which reads dcs[dcNr].surface_pressure and dcs[dcNr].salinity for planner
+	// dives.  Without this, pressure is zero (1 atm fallback) and salinity is
+	// zero (seawater fallback), producing wrong MOD and deco-switch depths for
+	// altitude or freshwater plans.
+	if (diveplan.surface_pressure.mbar == 0)
+		diveplan.surface_pressure = 1_atm;
+	d->surface_pressure = diveplan.surface_pressure;
+	d->dcs[dcNr].surface_pressure = diveplan.surface_pressure;
+	diveplan.salinity = waterType;
+	d->dcs[dcNr].salinity = waterType;
+
 	reset_cylinders(d, true);
 
-	// Add available OC-gases as "time=0" waypoints for the planner engine
-	pressure_t deco_po2_limit = { .mbar = qPrefDivePlanner::decopo2() };
+	// Add available OC-gases as "time=0" waypoints for the planner engine.
+	// Use each cylinder's switch depth (set by reset_cylinders() via the shared
+	// calculate_deco_switch_depth(), rounded to 3 m / 10 ft), exactly as the
+	// desktop planner's createTemporaryPlan() does, so the two planners pick the
+	// same gas-switch depths.
 	for (size_t i = 0; i < d->cylinders.size(); ++i) {
 		const cylinder_t &cyl = d->cylinders[i];
-		if (cyl.cylinder_use == OC_GAS) {
-			depth_t mod = d->gas_mod(cyl.gasmix, deco_po2_limit, 1_m);
-			divedatapoint point(0, mod, i, 0, false); // time=0, depth=MOD, cylinderid=i
+		if (cyl.depth.mm && cyl.cylinder_use == OC_GAS) {
+			divedatapoint point(0, cyl.depth, i, 0, false); // time=0, depth=switch depth, cylinderid=i
 			diveplan.dp.push_back(point);
 		}
 	}
-	diveplan.salinity = waterType;
 
-	// Populate the actual dive plan segments from QML data
+	// Populate the actual dive plan segments from QML data.  When
+	// "drop to first depth" (drop_stone_mode) is active, prepend a descent to
+	// the first entered depth using the same mm/s-resolution arithmetic as the
+	// desktop planner's createTemporaryPlan(), and carve that descent time out
+	// of the first entered segment so the total entered runtime is preserved.
+	// Previously the descent was rounded up to whole minutes in display units on
+	// the QML side, which diverged from the desktop planner (issue #4941).
+	bool firstSegment = true;
 	for (const QVariant &segData : segmentsData) {
 		QVariantMap map = segData.toMap();
 		int cylinderId = map["gas"].toInt();
 		divemode_t divemode = get_local_divemode(d, dcNr, cylinderId, static_cast<divemode_t>(map["divemode"].toInt()));
+		depth_t depth = units_to_depth(map["depth"].toInt());
+		int setpoint = map["setpoint"].toInt();
+		int duration = map["duration"].toInt() * 60;
 
-		plan_add_segment(diveplan, map["duration"].toInt() * 60, units_to_depth(map["depth"].toInt()), cylinderId, map["setpoint"].toInt(), true, divemode);
+		if (firstSegment && prefs.drop_stone_mode && prefs.descrate > 0) {
+			// Descent to the first depth at the configured descent rate.
+			int descentDuration = depth.mm / prefs.descrate;
+			plan_add_segment(diveplan, descentDuration, depth, cylinderId, setpoint, true, divemode);
+			duration -= descentDuration;
+		}
+		firstSegment = false;
+
+		if (duration >= 0)
+			plan_add_segment(diveplan, duration, depth, cylinderId, setpoint, true, divemode);
 	}
 
-	struct diveplan plan_copy = diveplan;
-
-	// Load ALL current settings from the correct preference classes
+	// Load ALL current settings from the correct preference classes.
+	// (surface_pressure is set earlier, before reset_cylinders(), so that the
+	// per-gas switch depths are computed at the correct altitude.)
 	diveplan.gflow = gfLow();
 	diveplan.gfhigh = gfHigh();
 	diveplan.bottomsac = qPrefDivePlanner::bottomsac();
 	diveplan.decosac = qPrefDivePlanner::decosac();
-	diveplan.surface_pressure = d->get_surface_pressure();
 	diveplan.vpmb_conservatism = qPrefTechnicalDetails::vpmb_conservatism();
+
+	// Snapshot the fully-configured plan for computeVariations().  Taken here,
+	// after surface_pressure and all other settings are finalised, so that
+	// variation plans run with the same pressure as the primary plan.
+	struct diveplan plan_copy = diveplan;
 
 	// Run the planner engine
 	// AI-generated (Claude)

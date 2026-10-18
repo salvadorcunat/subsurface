@@ -116,7 +116,9 @@ TEST(TestUnitConversion testunitconversion.cpp)
 TEST(TestProfile testprofile.cpp)
 TEST(TestGpsCoords testgpscoords.cpp)
 TEST(TestParse testparse.cpp)
+TEST(TestLibdivecomputer testlibdivecomputer.cpp)
 TEST(TestAirPressure testAirPressure.cpp)
+TEST(TestSurfaceGf testsurfacegf.cpp)
 if (BTSUPPORT)
 	TEST(TestHelper testhelper.cpp)
 endif()
@@ -186,6 +188,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestPlan
 	${TEST_DIVE_PLANNER_MODEL}
 	TestAirPressure
+	TestSurfaceGf
 	TestDiveSiteDuplication
 	TestRenumber
 	${TEST_PICTURE}
@@ -209,6 +212,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestQPrefUnits
 	TestQPrefUpdateManager
 	TestOstcFirmware
+	TestformatDiveGasString
 	TestQML
 	TestRuler
 	TestMobileCylinderEdit

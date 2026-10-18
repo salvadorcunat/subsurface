@@ -6,7 +6,10 @@
 #include "core/errorhelper.h"
 #include "core/planner.h"
 #include "core/pref.h"
+#include "core/profile.h"
+#include "core/sample.h"
 #include "core/subsurfacestartup.h"
+#include "core/tanksensormapping.h"
 #include "core/units.h"
 
 #define DEBUG 1
@@ -1002,6 +1005,212 @@ void TestPlan::testRecreationalWithinNDL()
 	planner_error_t error = plan(&test_deco_state, testPlan, &dive, 0, 60, cache, true, false, nullptr);
 
 	QCOMPARE(error, PLAN_OK);
+}
+
+// AI-generated (Claude)
+// Set up a pSCR technical plan to 30m on EAN32, with deco gases EAN50 and
+// 100% O2, planned with Buehlmann/GF. This is the reported real-world
+// configuration in which the ascent switch to 100% O2 needs no further stop
+// at the switch depth, so the switch waypoint ends up with zero duration
+// (regression test for a backwards/non-monotonic sample timestamp).
+diveplan setupPlanPscr30mEan32Ean50O2()
+{
+	diveplan dp;
+	dp.salinity = 10300;
+	dp.surface_pressure = 1_atm;
+	dp.gflow = 35;
+	dp.gfhigh = 75;
+	dp.bottomsac = prefs.bottomsac;
+	dp.decosac = prefs.decosac;
+
+	struct gasmix ean32 = { 32_percent, 0_percent };
+	struct gasmix ean50 = { 50_percent, 0_percent };
+	struct gasmix oxygen = { 100_percent, 0_percent };
+	pressure_t po2 = 1600_mbar;
+	// Start from a clean set of cylinders so that leftovers from a
+	// previous test (e.g. CCR diluent / bailout gases) do not affect the
+	// gas selection for this dive.
+	dive.cylinders.clear();
+	// Note: we add the highest-index cylinder first, because
+	// pointers to cylinders are not stable when reallocating.
+	// For testing OK - don't do this in actual code!
+	cylinder_t *cyl2 = dive.get_or_create_cylinder(2);
+	cylinder_t *cyl0 = dive.get_or_create_cylinder(0);
+	cylinder_t *cyl1 = dive.get_or_create_cylinder(1);
+	cyl0->gasmix = ean32;
+	cyl0->type.size = 18_l;
+	cyl0->type.workingpressure = 232_bar;
+	cyl1->gasmix = ean50;
+	cyl1->type.size = 11_l;
+	cyl1->type.workingpressure = 232_bar;
+	cyl2->gasmix = oxygen;
+	cyl2->type.size = 7_l;
+	cyl2->type.workingpressure = 232_bar;
+	dive.surface_pressure = 1_atm;
+	reset_cylinders(&dive, true);
+
+	int droptime = m_or_ft(30, 100).mm * 60 / m_or_ft(18, 60).mm;
+	plan_add_segment(dp, 0, dive.gas_mod(ean50, po2, m_or_ft(3, 10)), 1, 0, 1, PSCR);
+	plan_add_segment(dp, 0, dive.gas_mod(oxygen, po2, m_or_ft(3, 10)), 2, 0, 1, PSCR);
+	plan_add_segment(dp, droptime, m_or_ft(30, 100), 0, 0, 1, PSCR);
+	plan_add_segment(dp, 20 * 60 - droptime, m_or_ft(30, 100), 0, 0, 1, PSCR);
+	return dp;
+}
+
+// AI-generated (Claude)
+// Regression test: an ascent gas switch to 100% O2 that needs no further
+// stop at the switch depth must never result in dc samples whose time runs
+// backwards (or even just repeats out of order). create_dive_from_plan()
+// must tolerate a zero-duration switch waypoint.
+void TestPlan::testZeroDurationO2SwitchSampleOrder()
+{
+	deco_state_cache cache;
+
+	setupPrefs();
+	prefs.unit_system = METRIC;
+	prefs.units.length = units::METERS;
+	prefs.planner_deco_mode = BUEHLMANN;
+	dive.dcs[0].divemode = PSCR;
+
+	auto testPlan = setupPlanPscr30mEan32Ean50O2();
+
+	plan(&test_deco_state, testPlan, &dive, 0, 60, cache, true, false, nullptr);
+
+#if DEBUG
+	dive.notes.clear();
+	save_dive(stdout, dive, false);
+#endif
+
+	// Make sure the plan actually exercises the regression it is meant to
+	// guard against: it must contain a genuine zero-duration switch to the
+	// 100% O2 cylinder (id 2), i.e. a waypoint on cylinder 2 at the same
+	// positive time as the preceding waypoint on the previously active
+	// cylinder. Without this check the test would also pass for a plan
+	// that never reaches the O2 switch at all.
+	bool foundZeroDurationO2Switch = false;
+	for (size_t i = 1; i < testPlan.dp.size(); i++) {
+		const auto &prev = testPlan.dp[i - 1];
+		const auto &cur = testPlan.dp[i];
+		if (cur.cylinderid == 2 && prev.cylinderid != 2 &&
+		    cur.time > 0 && cur.time == prev.time) {
+			foundZeroDurationO2Switch = true;
+			break;
+		}
+	}
+	QVERIFY2(foundZeroDurationO2Switch,
+		 "plan did not contain a zero-duration switch to cylinder 2 (100% O2)");
+
+	const auto &samples = dive.dcs[0].samples;
+	QVERIFY(samples.size() > 1);
+	for (size_t i = 1; i < samples.size(); i++) {
+		if (samples[i].time.seconds < samples[i - 1].time.seconds)
+			report_error("Sample %zu time %d is earlier than previous sample time %d",
+				     i, samples[i].time.seconds, samples[i - 1].time.seconds);
+		QVERIFY(samples[i].time.seconds >= samples[i - 1].time.seconds);
+	}
+}
+
+// AI-generated (Claude)
+// Regression test for a CodeRabbit review point on the zero-duration gas
+// switch fix: at a switch waypoint with dp.time == lasttime, the outgoing
+// cylinder's last plot_info entry and the gas-change event share one second,
+// and gasmix_loop::cylinder_index_at() advances past any gas-change event
+// with time <= the query time. populate_pressure_information() therefore
+// zeroes the outgoing cylinder's raw SENSOR_PR at that shared entry.
+//
+// Measurement (ctest TestPlan, this branch, 14 Oct 2026) confirmed that this
+// zeroing is real, but harmless and not new:
+//  - It also happens, identically, at the pre-existing EAN32->EAN50 switch
+//    in this same plan, which takes real time and predates this fix.
+//  - populate_pressure_information() (core/gaspressures.cpp:368-373) reads
+//    the outgoing cylinder's pressure into its pr_track end value BEFORE
+//    zeroing the live entry, and fill_missing_tank_pressures() then
+//    recomputes the identical value into INTERPOLATED_PR at that very
+//    entry. get_plot_pressure(), the accessor the profile actually draws
+//    with (profile-widget/diveprofileitem.cpp), falls back from SENSOR_PR to
+//    INTERPOLATED_PR, so the plotted curve is unaffected either way.
+//  - This planner-generated dive has an empty dc.tank_sensor_mappings, so
+//    per-sample pressure[] values never reach plot_info at all
+//    (core/profile.cpp:420-426); the planner's pressure curve comes solely
+//    from the cylinder start/end anchors plus interpolation.
+// This test pins that recovery: the outgoing cylinder (1) must still report
+// its correct final pressure via get_plot_pressure() at the switch entry,
+// and the incoming cylinder (2) must report its correct starting pressure.
+void TestPlan::testZeroDurationO2SwitchPressureAttribution()
+{
+	deco_state_cache cache;
+
+	setupPrefs();
+	prefs.unit_system = METRIC;
+	prefs.units.length = units::METERS;
+	prefs.planner_deco_mode = BUEHLMANN;
+	dive.dcs[0].divemode = PSCR;
+
+	auto testPlan = setupPlanPscr30mEan32Ean50O2();
+
+	plan(&test_deco_state, testPlan, &dive, 0, 60, cache, true, false, nullptr);
+
+	// Design-constraint precondition (core/profile.cpp:724-728):
+	// setup_gas_sensor_pressure() skips any cylinder with !start || !end ||
+	// start == end, so each cylinder must be genuinely consumed here or its
+	// pressure would never be plotted at all, for an unrelated reason.
+	const cylinder_t *cyl0 = dive.get_cylinder(0);
+	const cylinder_t *cyl1 = dive.get_cylinder(1);
+	const cylinder_t *cyl2 = dive.get_cylinder(2);
+	for (const cylinder_t *cyl: { cyl0, cyl1, cyl2 }) {
+		QVERIFY2(cyl->start.mbar != 0, "cylinder start pressure must be nonzero");
+		QVERIFY2(cyl->end.mbar != 0, "cylinder end pressure must be nonzero");
+		QVERIFY2(cyl->start.mbar != cyl->end.mbar, "cylinder must be genuinely consumed (start == end otherwise)");
+	}
+
+	// This is a planner-generated dive: per-sample pressures must not reach
+	// plot_info via dc->tank_sensor_mappings (core/profile.cpp:420-426), so
+	// the pressure curve below can only come from the cylinder start/end
+	// anchors plus interpolation.
+	QVERIFY(dive.dcs[0].tank_sensor_mappings.empty());
+
+	// Locate the zero-duration switch waypoint to cylinder 2 (same
+	// detection logic as testZeroDurationO2SwitchSampleOrder()).
+	int switchSecond = -1;
+	for (size_t i = 1; i < testPlan.dp.size(); i++) {
+		const auto &prev = testPlan.dp[i - 1];
+		const auto &cur = testPlan.dp[i];
+		if (cur.cylinderid == 2 && prev.cylinderid != 2 && cur.time > 0 && cur.time == prev.time) {
+			switchSecond = cur.time;
+			break;
+		}
+	}
+	QVERIFY2(switchSecond > 0, "plan did not contain a zero-duration switch to cylinder 2 (100% O2)");
+
+	auto pi = create_plot_info_new(&dive, &dive.dcs[0], &test_deco_state);
+
+	// Find the first and last plot_info entry at the switch second: the
+	// outgoing cylinder's last entry and the incoming cylinder's first
+	// entry share this second (there may be more than one duplicate entry).
+	int firstAtS = -1, lastAtS = -1;
+	for (int i = 0; i < pi.nr; i++) {
+		if (pi.entry[i].sec == switchSecond) {
+			if (firstAtS < 0)
+				firstAtS = i;
+			lastAtS = i;
+		}
+	}
+	QVERIFY2(firstAtS >= 0, "no plot_info entry found at the switch second");
+
+	// The outgoing cylinder (1, EAN50) must still report its correct final
+	// pressure via the accessor the profile actually draws with, even
+	// though its raw SENSOR_PR is zeroed at this entry.
+	QCOMPARE(get_plot_sensor_pressure(pi, firstAtS, 1), 0);
+	QCOMPARE(get_plot_pressure(pi, firstAtS, 1), cyl1->end.mbar);
+
+	// The incoming cylinder (2, 100% O2) must report its correct starting
+	// pressure (as a raw, unzeroed sensor anchor) at the same entry.
+	QCOMPARE(get_plot_sensor_pressure(pi, firstAtS, 2), cyl2->start.mbar);
+
+	// Sanity-check the duplicate entries at the same second, if any: they
+	// must not regress cylinder 2's pressure above its starting pressure.
+	for (int i = firstAtS; i <= lastAtS; i++)
+		QVERIFY(get_plot_pressure(pi, i, 2) <= cyl2->start.mbar);
 }
 
 // AI-generated (Claude)
