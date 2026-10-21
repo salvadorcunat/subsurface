@@ -79,6 +79,7 @@ private:
 	void showRememberedDCs();
 	void checkShowError(states state);
 	void showUpdateDialog();
+	void updateSearchTooltip(const QString &vendor);
 	QInputDialog authDialog;
 
 	QStringListModel vendorModel;

@@ -119,6 +119,7 @@ TEST(TestParse testparse.cpp)
 TEST(TestLibdivecomputer testlibdivecomputer.cpp)
 TEST(TestAirPressure testAirPressure.cpp)
 TEST(TestSurfaceGf testsurfacegf.cpp)
+TEST(TestOtuCns testotucns.cpp)
 if (BTSUPPORT)
 	TEST(TestHelper testhelper.cpp)
 endif()
@@ -172,6 +173,10 @@ TEST(TestOstcFirmware testostcfirmware.cpp)
 TEST(TestformatDiveGasString testformatDiveGasString.cpp)
 TEST(TestRuler testruler.cpp)
 TEST(TestMobileCylinderEdit testmobilecylinderedit.cpp)
+if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
+TEST(TestTankInfoModel testtankinfomodel.cpp)
+set(TEST_TANK_INFO_MODEL TestTankInfoModel)
+endif()
 add_test(NAME TestQML COMMAND $<TARGET_FILE:TestQML> -input ${SUBSURFACE_SOURCE}/tests)
 
 # this is currently broken
@@ -189,6 +194,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	${TEST_DIVE_PLANNER_MODEL}
 	TestAirPressure
 	TestSurfaceGf
+	TestOtuCns
 	TestDiveSiteDuplication
 	TestRenumber
 	${TEST_PICTURE}
@@ -216,6 +222,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestQML
 	TestRuler
 	TestMobileCylinderEdit
+	${TEST_TANK_INFO_MODEL}
 )
 
 # useful for debugging CMake issues

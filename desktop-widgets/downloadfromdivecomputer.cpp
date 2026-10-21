@@ -24,7 +24,7 @@
 
 static bool is_vendor_searchable(QString vendor)
 {
-	return vendor == "Uemis" || vendor == "Garmin" || vendor == "FIT";
+	return vendor == "Uemis" || vendor == "Garmin";
 }
 
 DownloadFromDCWidget::DownloadFromDCWidget(const QString &filename, QWidget *parent) : QDialog(parent, QFlag(0)),
@@ -63,6 +63,7 @@ DownloadFromDCWidget::DownloadFromDCWidget(const QString &filename, QWidget *par
 	ui.unselectAllButton->setEnabled(false);
 	ui.vendor->setModel(&vendorModel);
 	ui.search->setEnabled(is_vendor_searchable(ui.vendor->currentText()));
+	updateSearchTooltip(ui.vendor->currentText());
 	ui.product->setModel(&productModel);
 	ui.syncDiveComputerTime->setChecked(prefs.sync_dc_time);
 
@@ -369,6 +370,7 @@ void DownloadFromDCWidget::on_vendor_currentTextChanged(const QString &vendor)
 	transport = dc_descriptor_get_transports(descriptor);
 	fill_device_list(transport);
 	ui.search->setEnabled(is_vendor_searchable(vendor));
+	updateSearchTooltip(vendor);
 }
 
 void DownloadFromDCWidget::on_product_currentTextChanged(const QString &)
@@ -390,6 +392,25 @@ void DownloadFromDCWidget::on_device_currentTextChanged(const QString &device)
 #endif
 }
 
+// This is for importing directly from a Garmin dive computer mounted as a USB
+// storage device, not for already-exported .fit files (use "Import Log File"
+// for those). libdivecomputer looks for the dive files inside a
+// "Garmin/Activity" folder structure under the selected folder, matching the
+// layout the device itself uses, before falling back to looking in the
+// selected folder directly. Hint at this so users who copy files off the
+// device by hand (e.g. on Linux, where it is not mounted automatically) know
+// to preserve that structure.
+void DownloadFromDCWidget::updateSearchTooltip(const QString &vendor)
+{
+	if (vendor == "Garmin")
+		ui.search->setToolTip(tr("For importing from a Garmin dive computer mounted as a USB "
+					  "storage device. When copying files from the device by hand, "
+					  "keep them inside the device's \"Garmin/Activity\" folder "
+					  "structure"));
+	else
+		ui.search->setToolTip(QString());
+}
+
 void DownloadFromDCWidget::on_search_clicked()
 {
 	if (is_vendor_searchable(ui.vendor->currentText())) {
@@ -398,8 +419,6 @@ void DownloadFromDCWidget::on_search_clicked()
 			dialogTitle = tr("Find Uemis dive computer");
 		else if (ui.vendor->currentText() == "Garmin")
 			dialogTitle = tr("Find Garmin dive computer");
-		else if (ui.vendor->currentText() == "FIT")
-			dialogTitle = tr("Select diretory to import .fit files from");
 		QString dirName = QFileDialog::getExistingDirectory(this,
 								    dialogTitle,
 								    QDir::homePath(),
@@ -607,13 +626,13 @@ void DownloadFromDCWidget::showUpdateDialog()
 		.arg(latestFirmwareAvailable);
 	message += tr("\n\nIf your device uses Bluetooth, enable Bluetooth on the dive computer and do the same preparations as for a logbook download before continuing with the update.");
 	response.addButton(tr("Not now"), QMessageBox::RejectRole);
-	response.addButton(tr("Update firmware"), QMessageBox::AcceptRole);
+	QAbstractButton *updateButton = response.addButton(tr("Update firmware"), QMessageBox::AcceptRole);
 	response.setText(message);
 	response.setWindowTitle(tr("Firmware update notice"));
 	response.setIcon(QMessageBox::Question);
 	response.setWindowModality(Qt::WindowModal);
-	int ret = response.exec();
-	if (ret == QMessageBox::Accepted) {
+	response.exec();
+	if (response.clickedButton() == updateButton) {
 		QString saveFileName = latestFirmwareFileName;
 		QFileInfo fi(filename);
 		saveFileName = fi.absolutePath().append(QDir::separator()).append(saveFileName);
