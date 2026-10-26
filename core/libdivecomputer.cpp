@@ -1850,7 +1850,8 @@ int prepare_device_descriptor(int data_model, dc_family_t dc_fam, device_data_t 
  * Parse data buffers instead of dc devices downloaded data.
  * Intended to be used to parse profile data from binary files during import tasks.
  * Actually included Uwatec families because of works on datatrak and smartrak logs
- * and OSTC families for OSTCTools logs import.
+ * and OSTC families for OSTCTools logs import, and Shearwater families for the
+ * logs stored in Shearwater Cloud databases.
  * For others, simply include them in the switch  (check parameters).
  * Note that dc_descriptor_t in data  *must* have been filled using dc_descriptor_iterator()
  * calls.
@@ -1884,6 +1885,8 @@ dc_status_t libdc_buffer_parser(struct dive *dive, device_data_t *data, const un
 	case DC_FAMILY_HW_OSTC3:
 	case DC_FAMILY_DIVESOFT_FREEDOM:
 	case DC_FAMILY_GARMIN:
+	case DC_FAMILY_SHEARWATER_PREDATOR:
+	case DC_FAMILY_SHEARWATER_PETREL:
 		rc = dc_parser_new2(&parser, data->context, data->descriptor, buffer, size);
 		break;
 	default:
@@ -1901,6 +1904,14 @@ dc_status_t libdc_buffer_parser(struct dive *dive, device_data_t *data, const un
 		rc = libdc_header_parser (parser, data, dive);
 		if (rc != DC_STATUS_SUCCESS) {
 			report_error("Error parsing the dive header data. Dive # %d: %s", dive->number, errmsg(rc));
+			// AI-generated (Claude)
+			// A Bluetooth download drops a Shearwater dive whose header fails
+			// to parse, so do the same for a Shearwater log read from a file
+			if (dc_descriptor_get_type(data->descriptor) == DC_FAMILY_SHEARWATER_PREDATOR ||
+			    dc_descriptor_get_type(data->descriptor) == DC_FAMILY_SHEARWATER_PETREL) {
+				dc_parser_destroy(parser);
+				return rc;
+			}
 		}
 	}
 	rc = dc_parser_samples_foreach (parser, sample_cb, &dive->dcs[0]);

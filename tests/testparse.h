@@ -18,12 +18,15 @@ private slots:
 	int parseV2NoQuestion();
 	int parseV3();
 	void testParse();
+	void exportSelectedTrip();
 	void testParseTsv();
 	void testParseCsv();
 	void testParseTankSensors();
 
 	void testParseDM4();
 	void testParseDM5();
+	void testParseShearwaterCloud();
+	void testParseShearwaterCloudGpsError();
 	void testParseHUDC();
 	void testParseNewFormat();
 	void testParseDLD();

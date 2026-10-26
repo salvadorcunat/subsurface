@@ -15,7 +15,7 @@ DMGCREATE=create-dmg
 # same git version magic as in the Makefile
 # for the naming of volume and dmg we want the 3 digits of the full version number
 if [ -z "${CANONICALVERSION+X}" ] ; then
-        CANONICALVERSION=$(cd ${DIR}/subsurface; ./scripts/get-version.sh)
+        CANONICALVERSION=$(cd "${DIR}/subsurface" || exit; ./scripts/get-version.sh)
 fi
 
 # first build and install Subsurface and then clean up the staging area
@@ -27,7 +27,7 @@ rm -rf ./Subsurface.app
 # unforunately that means we need to somehow hard-code a deployment target, hoping the local tools
 # know how to build for that. Which seems... odd
 ARCH=$(uname -m) # crazy, I know, but $(arch) results in the incorrect 'i386' on an x86_64 Mac
-OLDER_MAC_CMAKE="-DCMAKE_OSX_DEPLOYMENT_TARGET=${BASESDK} -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_BUILD_TYPE={$DEBUGRELEASE} -DCMAKE_INSTALL_PREFIX=${INSTALL_ROOT} -DCMAKE_POLICY_VERSION_MINIMUM=3.16"
+OLDER_MAC_CMAKE="-DCMAKE_OSX_DEPLOYMENT_TARGET=${BASESDK} -DCMAKE_OSX_ARCHITECTURES=${ARCH} -DCMAKE_BUILD_TYPE={$DEBUGRELEASE} -DCMAKE_INSTALL_PREFIX=${INSTALL_ROOT} -DCMAKE_POLICY_VERSION_MINIMUM=3.16"
 export PKG_CONFIG_PATH=${DIR}/install-root/lib/pkgconfig:$PKG_CONFIG_PATH
 
 cmake $OLDER_MAC_CMAKE \
@@ -51,7 +51,7 @@ done
 APP_BUNDLE="./Subsurface.app"
 QML_CONTROLS="$APP_BUNDLE/Contents/Resources/qml/QtQuick/Controls"
 for style in Basic Fusion Material Universal Imagine FluentWinUI3 iOS; do
-	rm -rf "${QML_CONTROLS}/${style}"
+	rm -rf "${QML_CONTROLS:?}/${style}"
 done
 
 # also remove debug symbols to save more space
@@ -62,12 +62,12 @@ EXECUTABLE=Subsurface.app/Contents/MacOS/Subsurface
 OLD=$(otool -L ${EXECUTABLE} | grep libgit2 | cut -d\  -f1 | tr -d "\t")
 if [[ ! -z ${OLD} && ! -f Subsurface.app/Contents/Frameworks/$(basename ${OLD}) ]] ; then
 	# copy the library into the bundle and make sure its id and the reference to it are correct
-	cp ${DIR}/install-root/lib/$(basename ${OLD}) Subsurface.app/Contents/Frameworks
+	cp "${DIR}/install-root/lib/$(basename "${OLD}")" Subsurface.app/Contents/Frameworks
 	SONAME=$(basename $OLD)
 	install_name_tool -change ${OLD} @executable_path/../Frameworks/${SONAME} ${EXECUTABLE}
 	install_name_tool -id @executable_path/../Frameworks/${SONAME} Subsurface.app/Contents/Frameworks/${SONAME}
 	CURLLIB=$(otool -L Subsurface.app/Contents/Frameworks/${SONAME} | grep libcurl | cut -d\  -f1 | tr -d "\t")
-	install_name_tool -change ${CURLLIB} @executable_path/../Frameworks/$(basename ${CURLLIB}) Subsurface.app/Contents/Frameworks/${SONAME}
+	install_name_tool -change ${CURLLIB} "@executable_path/../Frameworks/$(basename "${CURLLIB}")" Subsurface.app/Contents/Frameworks/${SONAME}
 fi
 
 # ensure libpng and libjpeg inside the bundle are referenced in QtWebKit libraries
@@ -140,18 +140,16 @@ echo "4. Checking library dependencies..."
 MISSING_LIBS=0
 BAD_LIBS=""
 
-for lib in $(find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -perm +111 \) 2>/dev/null); do
+while IFS= read -r -d '' lib; do
     # Skip script files
     file "$lib" 2>/dev/null | grep -q "Mach-O" || continue
 
     # Get library basename for self-reference check
     LIBNAME=$(basename "$lib")
 
-    # Get all dependencies, excluding the first line (install name) and skipping column 1
-    # Format is: \t<path> (compatibility...)
-    DEPS=$(otool -L "$lib" 2>/dev/null | tail -n +2 | awk '{print $1}')
-
-    for dep in $DEPS; do
+    # Get all dependencies, excluding the first line (install name).
+    # Format is: \t<path> (compatibility version..., current version...)
+    while IFS= read -r dep; do
         # Skip if it's a self-reference (library depends on itself)
         DEPNAME=$(basename "$dep")
         [[ "$DEPNAME" == "$LIBNAME" ]] && continue
@@ -171,8 +169,9 @@ for lib in $(find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -perm +111 \) 2>/d
         echo "   ⚠️  $LIBNAME has external dependency: $dep"
         BAD_LIBS="$BAD_LIBS\n  $LIBNAME -> $dep"
         MISSING_LIBS=1
-    done
-done
+    done < <(otool -L "$lib" 2>/dev/null | tail -n +2 |
+             sed -E 's/^[[:space:]]+//; s/[[:space:]]+\(compatibility version [^)]*\)$//')
+done < <(find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -perm +111 \) -print0 2>/dev/null)
 
 if [ $MISSING_LIBS -eq 0 ]; then
     echo "✅ All libraries use bundle-relative or system paths"
@@ -319,7 +318,7 @@ mkdir ./staging
 cp -a ./Subsurface.app ./staging
 
 if [ "$SIGN" = "1" ] ; then # that's for local builds for Dirk... oops
-	sh ${DIR}/subsurface/packaging/macosx/sign
+	sh "${DIR}/subsurface/packaging/macosx/sign.sh"
 else
 	codesign --force --deep --sign - staging/Subsurface.app
 fi

@@ -19,7 +19,12 @@ import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 import android.util.Log;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import android.net.Uri;
+import android.provider.DocumentsContract;
 import androidx.core.content.FileProvider;
 import androidx.core.app.ShareCompat;
 import android.content.pm.PackageManager;
@@ -86,6 +91,141 @@ public class SubsurfaceMobileActivity extends QtActivity
 		return true;
 	}
 
+	// AI-generated (Claude)
+	// Lets the user save a copy of the file wherever they choose, through the
+	// system's save dialog (Storage Access Framework). That needs no storage
+	// permission: the app only writes to the document the user created.
+	//
+	// Each save works on its own snapshot of the export: writeExportFile()
+	// always writes to the same path, and another export started while a slow
+	// provider is still copying must not change (or de-anonymise) this one.
+	// The snapshot is the export file itself, renamed out of the way.
+	private static final int SAVE_FILE_REQUEST = 4711;
+	private File pendingSnapshot;
+
+	// reports a failed save to the user (core/android.cpp)
+	private static native void saveFileFailed();
+
+	private static void copyStream(InputStream in, OutputStream out) throws IOException {
+		if (out == null)
+			throw new IOException("no output stream");
+		byte[] buffer = new byte[65536];
+		int n;
+		while ((n = in.read(buffer)) > 0)
+			out.write(buffer, 0, n);
+	}
+
+	private synchronized File takePendingSnapshot(File replacement) {
+		File previous = pendingSnapshot;
+		pendingSnapshot = replacement;
+		return previous;
+	}
+
+	public boolean saveFile(String path) {
+		Log.d(TAG + " saveFile - offering to save: ", path);
+		final File export = new File(path);
+		final File snapshot;
+		try {
+			// in the export's own folder, so that it can be renamed into place
+			snapshot = File.createTempFile("export-", null, export.getParentFile());
+		} catch (IOException e) {
+			Log.e(TAG + " saveFile", "cannot create a snapshot for " + path, e);
+			saveFileFailed();
+			return false;
+		}
+		// Moving the fresh export aside is instant, however large the dive log,
+		// and the next export simply writes a new file at the shared path.
+		// A rename within one folder of the app's storage is not expected to
+		// fail; if it does, report it rather than copy from a file that the
+		// next export may rewrite meanwhile.
+		if (!export.renameTo(snapshot)) {
+			Log.e(TAG + " saveFile", "cannot move " + path + " to " + snapshot.getPath());
+			snapshot.delete();
+			saveFileFailed();
+			return false;
+		}
+		offerToSave(snapshot, export.getName());
+		return true;
+	}
+
+	private void offerToSave(File snapshot, String fileName) {
+		// a save dialog that never returned leaves its snapshot behind
+		File stale = takePendingSnapshot(snapshot);
+		if (stale != null)
+			stale.delete();
+
+		// octet-stream, so that no provider appends an extension of its own to the name
+		Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+		intent.addCategory(Intent.CATEGORY_OPENABLE);
+		intent.setType("application/octet-stream");
+		intent.putExtra(Intent.EXTRA_TITLE, fileName);
+		runOnUiThread(() -> startActivityForResult(intent, SAVE_FILE_REQUEST));
+	}
+
+	@Override
+	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+		super.onActivityResult(requestCode, resultCode, data);
+		if (requestCode != SAVE_FILE_REQUEST)
+			return;
+		final File snapshot = takePendingSnapshot(null);
+		if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+			Log.d(TAG + " saveFile", "cancelled");
+			if (snapshot != null)
+				snapshot.delete();
+			return;
+		}
+		final Uri target = data.getData();
+		if (snapshot == null || !snapshot.exists()) {
+			// the snapshot got lost (the activity was recreated and the cache cleared)
+			Log.e(TAG + " saveFile", "no snapshot to save to " + target.toString());
+			deleteIncompleteDocument(target);
+			saveFileFailed();
+			return;
+		}
+		// a dive log can be tens of MB: copy it off the UI thread
+		new Thread(() -> {
+			boolean saved = false;
+			try {
+				try (InputStream in = new FileInputStream(snapshot);
+				     OutputStream out = getContentResolver().openOutputStream(target, "wt")) {
+					copyStream(in, out);
+				}
+				// only now: closing the output stream can fail, too
+				saved = true;
+			} catch (Exception e) {
+				Log.e(TAG + " saveFile", "failed to save to " + target.toString(), e);
+			}
+			snapshot.delete();
+			if (saved) {
+				Log.d(TAG + " saveFile", "saved to " + target.toString());
+				return;
+			}
+			deleteIncompleteDocument(target);
+			saveFileFailed();
+		}).start();
+	}
+
+	// don't leave a truncated file behind that looks like a good export
+	private void deleteIncompleteDocument(Uri target) {
+		try {
+			DocumentsContract.deleteDocument(getContentResolver(), target);
+		} catch (Exception e) {
+			Log.e(TAG + " saveFile", "cannot remove the incomplete " + target.toString(), e);
+		}
+	}
+
+	// the save dialog may outlive this activity instance: keep the snapshot's path
+	private static final String SAVE_SNAPSHOT_KEY = "pendingSaveSnapshot";
+
+	@Override
+	protected void onSaveInstanceState(Bundle outState) {
+		super.onSaveInstanceState(outState);
+		synchronized (this) {
+			if (pendingSnapshot != null)
+				outState.putString(SAVE_SNAPSHOT_KEY, pendingSnapshot.getPath());
+		}
+	}
+
 	public boolean supportEmail(String path1, String path2) {
 		return shareViaEmail("Subsurface-mobile support request",
 				"in-app-support@subsurface-divelog.org",
@@ -143,6 +283,10 @@ public class SubsurfaceMobileActivity extends QtActivity
 	{
 		Log.i(TAG + " onCreate", "onCreate SubsurfaceMobileActivity");
 		super.onCreate(savedInstanceState);
+
+		// AI-generated (Claude): a save dialog still open from before a recreation
+		if (savedInstanceState != null && savedInstanceState.getString(SAVE_SNAPSHOT_KEY) != null)
+			takePendingSnapshot(new File(savedInstanceState.getString(SAVE_SNAPSHOT_KEY)));
 
 		// AI-generated (Claude)
 		// Let app content draw under the system bars from API 35 (Android 15) onward.

@@ -145,6 +145,44 @@ void TestParse::testParse()
 		     SUBSURFACE_TEST_DATA "/dives/test40-42.xml");
 }
 
+void TestParse::exportSelectedTrip()
+{
+	QCOMPARE(parse_file(SUBSURFACE_TEST_DATA "/dives/test-selected-trip-export.xml", &divelog), 0);
+	QCOMPARE(divelog.dives.size(), size_t(5));
+	QCOMPARE(divelog.trips.size(), size_t(2));
+	divelog.dives[0]->selected = true;
+	divelog.dives[2]->selected = true;
+	divelog.dives[4]->selected = true;
+
+	QCOMPARE(save_dives_logic("./testselectedtrip.ssrf", true, false), 0);
+	QFile output("./testselectedtrip.ssrf");
+	QVERIFY(output.open(QFile::ReadOnly));
+	const QString xml = QString::fromUtf8(output.readAll());
+	QCOMPARE(xml.count("<trip"), 1);
+	QVERIFY(xml.contains("location='Selected Trip'"));
+	QVERIFY(xml.contains("<notes>Trip notes</notes>"));
+	QVERIFY(!xml.contains("Unselected Trip"));
+	QVERIFY(xml.contains("number='101'"));
+	QVERIFY(xml.contains("number='103'"));
+	QVERIFY(xml.contains("number='105'"));
+	QVERIFY(xml.indexOf("<trip") < xml.indexOf("number='101'"));
+	QVERIFY(xml.indexOf("number='101'") < xml.indexOf("number='103'"));
+	QVERIFY(xml.indexOf("number='103'") < xml.indexOf("</trip>"));
+	QVERIFY(xml.indexOf("</trip>") < xml.indexOf("number='105'"));
+	QVERIFY(!xml.contains("number='102'"));
+	QVERIFY(!xml.contains("number='104'"));
+	output.close();
+
+	QCOMPARE(save_dives_logic("./testselectedtrip-anonymized.ssrf", true, true), 0);
+	QFile anonymizedOutput("./testselectedtrip-anonymized.ssrf");
+	QVERIFY(anonymizedOutput.open(QFile::ReadOnly));
+	const QString anonymizedXml = QString::fromUtf8(anonymizedOutput.readAll());
+	QVERIFY(anonymizedXml.contains("location='Xxxxxxxx Xxxx'"));
+	QVERIFY(anonymizedXml.contains("<notes>Xxxx xxxxx</notes>"));
+	QVERIFY(!anonymizedXml.contains("Selected Trip"));
+	QVERIFY(!anonymizedXml.contains("Trip notes"));
+}
+
 void TestParse::testParseTsv()
 {
 	// On some platforms (Windows) size_t has a different format string.
@@ -197,6 +235,39 @@ void TestParse::testParseDM5()
 	QCOMPARE(save_dives("./testdm5out.ssrf"), 0);
 	FILE_COMPARE("./testdm5out.ssrf",
 		     SUBSURFACE_TEST_DATA "/dives/TestDiveDM5.xml");
+}
+
+// AI-generated (Claude)
+// A Shearwater Cloud database whose dive_logs and dive_log_records tables are
+// empty, so the dives can only come from the raw logs in log_data
+void TestParse::testParseShearwaterCloud()
+{
+	QCOMPARE(sqlite3_open(SUBSURFACE_TEST_DATA "/dives/TestDiveShearwaterCloud.db", &_sqlite3_handle), 0);
+	QCOMPARE(parse_shearwater_cloud_buffer(_sqlite3_handle, 0, 0, 0, &divelog), 0);
+	QCOMPARE(divelog.dives.size(), 2);
+
+	QCOMPARE(save_dives("./testshearwatercloudout.ssrf"), 0);
+	FILE_COMPARE("./testshearwatercloudout.ssrf",
+		     SUBSURFACE_TEST_DATA "/dives/TestDiveShearwaterCloud.xml");
+}
+
+// AI-generated (Claude)
+// The Perdix 2 dive from TestDiveShearwaterCloud.db, changed so that the
+// header parser first creates a dive site from a GPS fix and then fails:
+// opening record 4 byte 28 (air integration mode) is AI_ON_GPS, opening
+// record 9 holds a 3D fix at 9.07 N 123.27 E, and opening record 4 byte 1
+// (dive mode) is 0x7F, which no Shearwater computer uses. The dive must be
+// dropped without leaving its dive site behind.
+void TestParse::testParseShearwaterCloudGpsError()
+{
+	QCOMPARE(sqlite3_open(SUBSURFACE_TEST_DATA "/dives/TestDiveShearwaterCloudGpsError.db", &_sqlite3_handle), 0);
+	// The header error is reported by design, so don't fail on it
+	set_error_cb([](std::string) {});
+	int ret = parse_shearwater_cloud_buffer(_sqlite3_handle, 0, 0, 0, &divelog);
+	set_error_cb(&TestBase::failOnError);
+	QCOMPARE(ret, 0);
+	QCOMPARE(divelog.dives.size(), 0);
+	QCOMPARE(divelog.sites.size(), 0);
 }
 
 void TestParse::testParseHUDC()
