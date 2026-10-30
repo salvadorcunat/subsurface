@@ -140,6 +140,10 @@ set(TEST_PICTURE TestPicture)
 endif()
 TEST(TestMerge testmerge.cpp)
 TEST(TestTagList testtaglist.cpp)
+if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
+TEST(TestCylindersModelSensorRefresh testcylindersmodelsensorrefresh.cpp)
+set(TEST_CYLINDERS_MODEL_SENSOR_REFRESH TestCylindersModelSensorRefresh)
+endif()
 
 if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable" AND NOT NO_PRINTING)
 	TEST(TestPrinting testprinting.cpp)
@@ -176,6 +180,8 @@ TEST(TestMobileCylinderEdit testmobilecylinderedit.cpp)
 if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
 TEST(TestTankInfoModel testtankinfomodel.cpp)
 set(TEST_TANK_INFO_MODEL TestTankInfoModel)
+TEST(TestDiveFilter testdivefilter.cpp)
+set(TEST_DIVE_FILTER TestDiveFilter)
 endif()
 add_test(NAME TestQML COMMAND $<TARGET_FILE:TestQML> -input ${SUBSURFACE_SOURCE}/tests)
 
@@ -200,6 +206,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	${TEST_PICTURE}
 	TestMerge
 	TestTagList
+	${TEST_CYLINDERS_MODEL_SENSOR_REFRESH}
 	${TEST_PLANNER_SHARED}
 	${TEST_PRINTING}
 	TestQPrefCloudStorage
@@ -223,6 +230,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestRuler
 	TestMobileCylinderEdit
 	${TEST_TANK_INFO_MODEL}
+	${TEST_DIVE_FILTER}
 )
 
 # useful for debugging CMake issues
