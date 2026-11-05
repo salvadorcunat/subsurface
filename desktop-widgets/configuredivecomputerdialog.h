@@ -60,6 +60,9 @@ public:
 	explicit ConfigureDiveComputerDialog(const QString &filename, QWidget *parent = 0);
 	~ConfigureDiveComputerDialog();
 
+public slots:
+	void reject() override;
+
 private
 slots:
 	void changeTimeSync(int state);
@@ -83,7 +86,7 @@ slots:
 	void on_DiveComputerList_currentRowChanged(int currentRow);
 
 	void dc_open();
-	void dc_close();
+	bool dc_close();
 
 #ifdef BT_SUPPORT
 	void bluetoothSelectionDialogIsFinished(int result);
@@ -91,12 +94,19 @@ slots:
 #endif
 
 private:
+	friend class TestOstc4Dialog;
 	Ui::ConfigureDiveComputerDialog ui;
 
 	QString logFile;
 	QString filename;
+	QString ostc4BackupDirectory;
+	QString ostc4Status;
 
 	void closeEvent(QCloseEvent *event);
+	bool eventFilter(QObject *object, QEvent *event) override;
+	void setOstc4Status(const QString &message, const QString &extra = QString());
+	void clearOstc4Status();
+	void updateOstc4Status();
 
 	ConfigureDiveComputer *config;
 	device_data_t device_data;
@@ -106,6 +116,9 @@ private:
 
 	DeviceDetails deviceDetails;
 	void populateDeviceDetails();
+	QString newOstc4BackupPath() const;
+	bool saveManualOstc4Backup(const QString &path, QString &error) const;
+	void openOstc4BackupFolder();
 	void populateDeviceDetailsOSTC3();
 	void populateDeviceDetailsOSTC();
 	void populateDeviceDetailsSuuntoVyper();

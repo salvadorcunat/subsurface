@@ -20,6 +20,7 @@ Kirigami.ScrollablePage {
 	Kirigami.ColumnView.preventStealing: true
 	property int dlHorizontalPadding: Kirigami.Units.gridUnit / 2 - Kirigami.Units.smallSpacing  + 1
 	property QtObject diveListModel: null
+	readonly property bool filterFieldFocused: sitefilter.activeFocus
 	// we want to use our own colors for Kirigami, so let's define our colorset
 	Kirigami.Theme.inherit: false
 	Kirigami.Theme.colorSet: Kirigami.Theme.Button
@@ -358,6 +359,41 @@ Kirigami.ScrollablePage {
 		}
 	}
 
+	function toggleFilter() {
+		rootItem.filterToggle = !rootItem.filterToggle
+		if (!rootItem.filterToggle) {
+			sitefilter.focus = false
+			Qt.inputMethod.hide()
+			if (sitefilter.text)
+				sitefilter.text = "" // onTextChanged clears the manager filter
+			else
+				manager.setFilter("", 0)
+		}
+		// On opening, filterBar.onEnabledChanged focuses the field after the
+		// header animation. Showing the keyboard here is too early.
+	}
+
+	Connections {
+		target: pageStack
+		function onDepthChanged() {
+			// Statistics removes the list from the stack but still uses the
+			// shared dive filter. Clear before Statistics is pushed, but not
+			// while another page is merely stacked above the list.
+			if (pageStack.depth === 0 && rootItem.filterToggle)
+				toggleFilter()
+		}
+		function onCurrentItemChanged() {
+			if (pageStack.currentItem === page && rootItem.filterToggle) {
+				Qt.callLater(function() {
+					if (pageStack.currentItem === page && filterBar.enabled) {
+						sitefilter.forceActiveFocus()
+						Qt.inputMethod.show()
+					}
+				})
+			}
+		}
+	}
+
 	Controls.Label {
 		property bool showProcessingText: manager.diveListProcessing
 		anchors.fill: parent
@@ -418,8 +454,16 @@ Kirigami.ScrollablePage {
 				Layout.minimumWidth: 0
 				Layout.preferredWidth: Math.min(Kirigami.Units.gridUnit * 8, filterBar.width * 0.3)
 				Layout.maximumWidth: filterBar.width * 0.3
-				onActivated:  {
+				onActivated: {
 					manager.setFilter(sitefilter.text, currentIndex)
+					// The popup takes focus while selecting a mode. Restore it only
+					// after the popup has closed.
+					Qt.callLater(function() {
+						if (rootItem.filterToggle && page.visible && filterBar.enabled) {
+							sitefilter.forceActiveFocus()
+							Qt.inputMethod.show()
+						}
+					})
 				}
 			}
 			SsrfTextField  {
@@ -432,20 +476,17 @@ Kirigami.ScrollablePage {
 				onTextChanged: {
 					manager.setFilter(text, sitefilterMode.currentIndex)
 				}
-				onVisibleChanged: {
-					// reset the filter when it gets toggled
-					text = ""
-				}
-				onEnabledChanged: {
-					if (enabled && visible) {
-						forceActiveFocus()
-					}
-				}
 			}
 			TemplateLabel {
 				id: numShown
 				verticalAlignment: Text.AlignVCenter
 				text: diveModel.shown
+			}
+			onEnabledChanged: {
+				if (enabled && page.visible) {
+					sitefilter.forceActiveFocus()
+					Qt.inputMethod.show()
+				}
 			}
 		}
 	}
@@ -464,12 +505,7 @@ Kirigami.ScrollablePage {
 			SsrfToolButton {
 				iconSource: "qrc:/icons/ic_filter_list.svg"
 				onClicked: {
-					rootItem.filterToggle = !rootItem.filterToggle
-					manager.setFilter("", 0)
-					if (rootItem.filterToggle)
-						Qt.inputMethod.show()
-					else
-						Qt.inputMethod.hide()
+					toggleFilter()
 				}
 			}
 			SsrfToolButton {
@@ -532,12 +568,7 @@ Kirigami.ScrollablePage {
 		}
 		text: qsTr("Filter dives")
 		onTriggered: {
-			rootItem.filterToggle = !rootItem.filterToggle
-			manager.setFilter("", 0)
-			if (rootItem.filterToggle)
-				Qt.inputMethod.show()
-			else
-				Qt.inputMethod.hide()
+			toggleFilter()
 		}
 	}
 
