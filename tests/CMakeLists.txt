@@ -151,6 +151,19 @@ if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
 TEST(TestPicture testpicture.cpp)
 set(TEST_PICTURE TestPicture)
 endif()
+# Uses the real undo commands instead of the stubs from testbase.cpp, so it
+# is set up like TestOstc4Dialog and does not link RESOURCE_LIBRARY.
+if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
+	add_executable(TestPasteDives testpastedives.cpp testpastedives.h)
+	target_link_libraries(TestPasteDives subsurface_commands subsurface_models_desktop
+		subsurface_backend_shared subsurface_corelib
+		${QT_TEST_LIBRARIES} ${SUBSURFACE_LINK_LIBRARIES})
+	add_test(NAME TestPasteDives COMMAND $<TARGET_FILE:TestPasteDives>)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		set_tests_properties(TestPasteDives PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	set(TEST_PASTE_DIVES TestPasteDives)
+endif()
 TEST(TestMerge testmerge.cpp)
 TEST(TestTagList testtaglist.cpp)
 if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
@@ -196,6 +209,10 @@ TEST(TestTankInfoModel testtankinfomodel.cpp)
 set(TEST_TANK_INFO_MODEL TestTankInfoModel)
 TEST(TestDiveFilter testdivefilter.cpp)
 set(TEST_DIVE_FILTER TestDiveFilter)
+TEST(TestSurfaceIntervalColumn testsurfaceintervalcolumn.cpp)
+set(TEST_SURFACE_INTERVAL_COLUMN TestSurfaceIntervalColumn)
+TEST(TestSurfaceGfColumn testsurfacegfcolumn.cpp)
+set(TEST_SURFACE_GF_COLUMN TestSurfaceGfColumn)
 endif()
 add_test(NAME TestQML COMMAND $<TARGET_FILE:TestQML> -input ${SUBSURFACE_SOURCE}/tests)
 
@@ -220,6 +237,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestDiveSiteDuplication
 	TestRenumber
 	${TEST_PICTURE}
+	${TEST_PASTE_DIVES}
 	TestMerge
 	TestTagList
 	${TEST_CYLINDERS_MODEL_SENSOR_REFRESH}
@@ -248,6 +266,8 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestMobileCylinderEdit
 	${TEST_TANK_INFO_MODEL}
 	${TEST_DIVE_FILTER}
+	${TEST_SURFACE_INTERVAL_COLUMN}
+	${TEST_SURFACE_GF_COLUMN}
 )
 
 # useful for debugging CMake issues
