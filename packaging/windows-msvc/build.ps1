@@ -63,6 +63,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# This script checks $LASTEXITCODE after native commands itself. PowerShell 7.4+ can instead raise
+# an error for a non-zero exit code when a caller sets this preference, which would bypass those
+# checks and their cleanup. Setting it here is local to the script and is ignored by PowerShell 5.1.
+$PSNativeCommandUseErrorActionPreference = $false
+
 # ---------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------
@@ -359,7 +364,7 @@ if (-not $SkipLibdivecomputer) {
     }
 
     if ($msbuildExitCode -ne 0) {
-        Write-Error "libdivecomputer build failed"
+        Write-Error "libdivecomputer build failed" -ErrorAction Continue
         exit $msbuildExitCode
     }
 
@@ -390,10 +395,34 @@ if (-not $SkipGooglemaps) {
     # Clone if not present
     if (-not (Test-Path $googlemapsDir)) {
         Write-Host "Cloning googlemaps plugin..."
-        git clone https://github.com/Subsurface/googlemaps.git $googlemapsDir
-        Push-Location $googlemapsDir
-        git checkout qt6-upstream
-        Pop-Location
+        # Clone the branch directly, into a directory of our own, and move it into place only when
+        # the clone succeeded. If only the checkout fails, git leaves the clone behind and a rerun
+        # would accept it, so googlemapsDir must never hold a partial clone. The cleanup below then
+        # only removes this run's directory, and the move fails rather than replacing a directory
+        # that another build created in the meantime.
+        $googlemapsClone = "$googlemapsDir.clone-" + [guid]::NewGuid().ToString("N")
+        git clone --branch qt6-upstream https://github.com/Subsurface/googlemaps.git $googlemapsClone
+
+        if ($LASTEXITCODE -ne 0) {
+            $cloneExitCode = $LASTEXITCODE
+            if (Test-Path -LiteralPath $googlemapsClone) {
+                Remove-Item -LiteralPath $googlemapsClone -Recurse -Force -ErrorAction Continue
+            }
+            Write-Error "googlemaps clone failed" -ErrorAction Continue
+            exit $cloneExitCode
+        }
+
+        try {
+            # .NET resolves relative paths against the process working directory, which can differ
+            # from the PowerShell location that git and the other commands here use
+            $moveFrom = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($googlemapsClone)
+            $moveTo = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($googlemapsDir)
+            [System.IO.Directory]::Move($moveFrom, $moveTo)
+        } catch {
+            Remove-Item -LiteralPath $googlemapsClone -Recurse -Force -ErrorAction Continue
+            Write-Error "googlemaps clone could not be moved to ${googlemapsDir}: $($_.Exception.Message)" -ErrorAction Continue
+            exit 1
+        }
     }
 
     $googlemapsBuild = Join-Path $googlemapsDir "build"
@@ -404,7 +433,7 @@ if (-not $SkipGooglemaps) {
     # Build with qmake
     $qmake = Join-Path $Qt6Dir "bin\qmake.exe"
     if (-not (Test-Path $qmake)) {
-        Write-Error "qmake not found at $qmake"
+        Write-Error "qmake not found at $qmake" -ErrorAction Continue
         Pop-Location
         exit 1
     }
@@ -413,7 +442,7 @@ if (-not $SkipGooglemaps) {
     & $qmake "CONFIG+=release" "$googlemapsDir\googlemaps.pro"
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "qmake failed"
+        Write-Error "qmake failed" -ErrorAction Continue
         Pop-Location
         exit $LASTEXITCODE
     }
@@ -422,13 +451,19 @@ if (-not $SkipGooglemaps) {
     nmake
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "googlemaps build failed"
+        Write-Error "googlemaps build failed" -ErrorAction Continue
         Pop-Location
         exit $LASTEXITCODE
     }
 
     Write-Host "Installing googlemaps plugin..."
     nmake install
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "googlemaps install failed" -ErrorAction Continue
+        Pop-Location
+        exit $LASTEXITCODE
+    }
 
     Pop-Location
 
@@ -443,12 +478,17 @@ if (-not $SkipQlitehtml) {
     Write-Step "Building qlitehtml library"
 
     $qlitehtmlDir = Join-Path $SourceDir "qlitehtml"
-    $qlitehtmlVersion = "b8f9096eae730ec9464b24874e4e6312144aa9ce"
+    $qlitehtmlVersion = "ed4bb77c8a993a4d664bf470dd6ad1649cd273f1"
 
     # Clone if not present
     if (-not (Test-Path $qlitehtmlDir)) {
         Write-Host "Cloning qlitehtml..."
-        git clone https://github.com/dirkhh/qlitehtml.git $qlitehtmlDir
+        git clone https://github.com/subsurface/qlitehtml.git $qlitehtmlDir
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "qlitehtml clone failed" -ErrorAction Continue
+            exit $LASTEXITCODE
+        }
     }
 
     Push-Location $qlitehtmlDir
@@ -457,30 +497,64 @@ if (-not $SkipQlitehtml) {
     $currentSha = git rev-parse HEAD 2>$null
     if ($currentSha -ne $qlitehtmlVersion) {
         Write-Host "Checking out version $qlitehtmlVersion..."
-        git fetch origin
+
+        # Only fetch when the pinned revision is not already available locally
+        $null = git rev-parse --verify --quiet "${qlitehtmlVersion}^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            git fetch origin
+
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "qlitehtml fetch failed" -ErrorAction Continue
+                Pop-Location
+                exit $LASTEXITCODE
+            }
+        }
+
         git checkout -f $qlitehtmlVersion
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "qlitehtml checkout of $qlitehtmlVersion failed" -ErrorAction Continue
+            Pop-Location
+            exit $LASTEXITCODE
+        }
     }
 
     # Initialize and update submodules
     Write-Host "Initializing submodules..."
     git submodule init
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "qlitehtml submodule init failed" -ErrorAction Continue
+        Pop-Location
+        exit $LASTEXITCODE
+    }
+
     git submodule update
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "qlitehtml submodule update failed" -ErrorAction Continue
+        Pop-Location
+        exit $LASTEXITCODE
+    }
 
     # qlitehtml currently only allows in-source builds
     # Configure with cmake
+    # litehtml runs clang-tidy with warnings as errors on itself when it finds one, and the one that
+    # comes with Visual Studio fails on it, so turn that off
     $cmakeQlitehtmlArgs = @(
         ".",
         "-G", "Ninja",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_PREFIX_PATH=$Qt6Dir",
-        "-DCMAKE_INSTALL_PREFIX=$InstallDir"
+        "-DCMAKE_INSTALL_PREFIX=$InstallDir",
+        "-DLITEHTML_ENABLE_LINT=OFF"
     )
 
     Write-Host "Running cmake..."
     cmake @cmakeQlitehtmlArgs
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "qlitehtml cmake configuration failed"
+        Write-Error "qlitehtml cmake configuration failed" -ErrorAction Continue
         Pop-Location
         exit $LASTEXITCODE
     }
@@ -489,7 +563,7 @@ if (-not $SkipQlitehtml) {
     ninja
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "qlitehtml build failed"
+        Write-Error "qlitehtml build failed" -ErrorAction Continue
         Pop-Location
         exit $LASTEXITCODE
     }
@@ -498,7 +572,7 @@ if (-not $SkipQlitehtml) {
     ninja install
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "qlitehtml install failed"
+        Write-Error "qlitehtml install failed" -ErrorAction Continue
         Pop-Location
         exit $LASTEXITCODE
     }
@@ -511,7 +585,7 @@ if (-not $SkipQlitehtml) {
         Write-Host "Installing bundled litehtml headers..."
         Copy-Item "$litehtmlInclude\*" -Destination "$InstallDir\include" -Recurse -Force
     } else {
-        Write-Error "Bundled litehtml headers not found at $litehtmlInclude"
+        Write-Error "Bundled litehtml headers not found at $litehtmlInclude" -ErrorAction Continue
         Pop-Location
         exit 1
     }
@@ -556,7 +630,7 @@ Write-Host "Running cmake..."
 cmake @cmakeArgs
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "CMake configuration failed"
+    Write-Error "CMake configuration failed" -ErrorAction Continue
     Pop-Location
     exit $LASTEXITCODE
 }
@@ -566,7 +640,7 @@ Write-Step "Building Subsurface"
 cmake --build . --config $BuildType -j $Jobs
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Subsurface build failed"
+    Write-Error "Subsurface build failed" -ErrorAction Continue
     Pop-Location
     exit $LASTEXITCODE
 }

@@ -50,6 +50,7 @@
 #include "core/pref.h"
 #include "core/file.h"
 #include "core/bluetoothaddress.h"
+#include "core/tankgasguess.h"
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -267,6 +268,112 @@ std::vector<int> gasmix_cylinders(const std::vector<cylinder_source> &cylinders,
 	return result;
 }
 
+// AI-generated (Claude)
+// The gas mix in use and the tank pressures at each sample, for guess_tank_gasmixes()
+struct tank_gas_trace {
+	std::vector<tank_gas_sample> samples;
+	size_t ntanks = 0;
+	int gasmix = -1;
+};
+
+/**
+ * @brief tank_gas_sample_cb collects the gas mix in use and the tank pressures of
+ * each sample, as a libdivecomputer sample callback
+ * Each sample starts with its time. A pressure without a sample, or for a tank
+ * the dive computer doesn't report, is ignored.
+ * @param type The type of the sample value.
+ * @param pvalue The sample value.
+ * @param userdata The tank_gas_trace to add to.
+ */
+static void tank_gas_sample_cb(dc_sample_type_t type, const dc_sample_value_t *pvalue, void *userdata)
+{
+	tank_gas_trace *trace = static_cast<tank_gas_trace *>(userdata);
+
+	switch (type) {
+	case DC_SAMPLE_TIME:
+		// Each sample starts with its time
+		trace->samples.push_back(tank_gas_sample { trace->gasmix, std::vector<int>(trace->ntanks, 0) });
+		break;
+	case DC_SAMPLE_GASMIX:
+		trace->gasmix = pvalue->gasmix == DC_GASMIX_UNKNOWN ? -1 : (int)pvalue->gasmix;
+		if (!trace->samples.empty())
+			trace->samples.back().gasmix = trace->gasmix;
+		break;
+	case DC_SAMPLE_PRESSURE:
+		// A reading that isn't a plausible tank pressure, e.g. from a parser's
+		// counter running past zero, would look like a huge drop or rise
+		if (!trace->samples.empty() && pvalue->pressure.tank < trace->ntanks &&
+		    pvalue->pressure.value > 0 && pvalue->pressure.value < 1000)
+			trace->samples.back().pressure[pvalue->pressure.tank] = lrint(pvalue->pressure.value * 1000);
+		break;
+	default:
+		break;
+	}
+}
+
+// AI-generated (Claude)
+/**
+ * @brief apply_tank_gas_guesses adds the guessed gas mixes to the tanks the dive
+ * computer doesn't link to a gas mix
+ * The links the dive computer reports are kept, and the tanks it excludes from the
+ * diver's gas, e.g. a buddy's, are left out. Nothing changes if nothing was guessed,
+ * or if the dive computer links no tank to a gas mix and the guesses only confirm
+ * the order of the tanks: then the tanks without a guess keep the gas mixes at their
+ * index too, as without the guess. If the dive computer links a tank to a gas mix
+ * other than the one at its index, any guess changes the tank it is added to, which
+ * would otherwise get the deepest gas mix.
+ * @param tank_gasmix The gas mix of each tank, -1 for none. The guesses are added.
+ * @param guess The guessed gas mix of each tank, -1 for none.
+ * @param tank_usage The usage the dive computer reports for each tank.
+ * @param ngases The number of gas mixes.
+ * @return true if the guesses changed the links.
+ */
+bool apply_tank_gas_guesses(std::vector<int> &tank_gasmix, const std::vector<int> &guess,
+			    const std::vector<dc_tank_usage_t> &tank_usage, unsigned int ngases)
+{
+	std::vector<int> result = tank_gasmix;
+	for (size_t i = 0; i < result.size() && i < guess.size(); i++) {
+		bool excluded = i < tank_usage.size() && tank_usage[i] == DC_TANK_USAGE_EXCLUDED;
+		if (result[i] < 0 && !excluded)
+			result[i] = guess[i];
+	}
+	if (result == tank_gasmix || !tanks_linked_to_gasmixes(result, ngases))
+		return false;
+	tank_gasmix = result;
+	return true;
+}
+
+// AI-generated (Claude)
+/**
+ * @brief guess_unlinked_tank_gasmixes guesses the gas mixes of the tanks the dive
+ * computer doesn't link to a gas mix, see guess_tank_gasmixes(), and notes in the
+ * extra data of the dive computer if that changes the cylinders
+ * The tanks the dive computer excludes from the diver's gas, e.g. a buddy's, are
+ * left out. This makes an extra pass over the samples, as the one that adds them to
+ * the dive only comes after the cylinders are set up. libdivecomputer parsers parse
+ * the samples again from the start on each pass.
+ * @param dive The dive.
+ * @param parser The libdivecomputer parser data.
+ * @param tank_gasmix The gas mix of each tank, -1 for none. The guesses are added.
+ * @param tank_usage The usage the dive computer reports for each tank.
+ * @param ngases The number of gas mixes.
+ */
+static void guess_unlinked_tank_gasmixes(struct dive *dive, dc_parser_t *parser, std::vector<int> &tank_gasmix,
+					 const std::vector<dc_tank_usage_t> &tank_usage, unsigned int ngases)
+{
+	tank_gas_trace trace;
+	trace.ntanks = tank_gasmix.size();
+	if (dc_parser_samples_foreach(parser, tank_gas_sample_cb, &trace) != DC_STATUS_SUCCESS)
+		return;
+
+	std::vector<bool> sidemount(tank_usage.size());
+	for (size_t i = 0; i < tank_usage.size(); i++)
+		sidemount[i] = tank_usage[i] == DC_TANK_USAGE_SIDEMOUNT;
+	std::vector<int> guess = guess_tank_gasmixes(trace.samples, sidemount, ngases);
+	if (apply_tank_gas_guesses(tank_gasmix, guess, tank_usage, ngases))
+		add_extra_data(&dive->dcs[0], "Tank gas mixes", "guessed by Subsurface");
+}
+
 /**
  * @brief parse_gasmixes matches gas mixes with cylinders
  * This function retrieves all tanks and gas mixes reported by libdivecomputer
@@ -277,6 +384,9 @@ std::vector<int> gasmix_cylinders(const std::vector<cylinder_source> &cylinders,
  * the gas mix with the lowest (deepest) MOD.
  * If the dive computer links tanks to other gas mixes, the tanks get their linked
  * gas mixes instead, see match_tanks_to_gasmixes().
+ * On open circuit dives, if the user has asked for it in the preferences, the gas
+ * mixes of the tanks the dive computer doesn't link are guessed first, see
+ * guess_unlinked_tank_gasmixes().
  * @param devdata The dive computer data.
  * @param dive The dive to which these tanks and gas mixes will be assigned.
  * @param parser The libdivecomputer parser data.
@@ -297,11 +407,14 @@ static dc_status_t parse_gasmixes(device_data_t *devdata, struct dive *dive, dc_
 	// AI-generated (Claude)
 	// The gas mix each tank is linked to, if the dive computer says
 	std::vector<int> tank_gasmix(ntanks, -1);
+	std::vector<dc_tank_usage_t> tank_usage(ntanks, DC_TANK_USAGE_NONE);
 	for (i = 0; i < ntanks; i++) {
 		dc_tank_t tank = { 0 };
 		tank.gasmix = DC_GASMIX_UNKNOWN;
-		if (dc_parser_get_field(parser, DC_FIELD_TANK, i, &tank) != DC_STATUS_SUCCESS ||
-		    tank.gasmix == DC_GASMIX_UNKNOWN)
+		if (dc_parser_get_field(parser, DC_FIELD_TANK, i, &tank) != DC_STATUS_SUCCESS)
+			continue;
+		tank_usage[i] = tank.usage;
+		if (tank.gasmix == DC_GASMIX_UNKNOWN)
 			continue;
 		if (tank.gasmix < ngases) {
 			tank_gasmix[i] = (int)tank.gasmix;
@@ -309,6 +422,10 @@ static dc_status_t parse_gasmixes(device_data_t *devdata, struct dive *dive, dc_
 			report_error("gasmix %u for tank %u doesn't exist", tank.gasmix, i);
 		}
 	}
+	// If the user asks for it, guess the gas mixes of the other tanks
+	if (prefs.guess_tank_gasmixes && dive->dcs[0].divemode == OC && ngases > 0 &&
+	    std::find(tank_gasmix.begin(), tank_gasmix.end(), -1) != tank_gasmix.end())
+		guess_unlinked_tank_gasmixes(dive, parser, tank_gasmix, tank_usage, ngases);
 
 	// With links, the numbers of gas mixes and tanks needn't match
 	if (!tanks_linked_to_gasmixes(tank_gasmix, ngases)) {
@@ -1046,6 +1163,74 @@ static dc_status_t libdc_header_parser(dc_parser_t *parser, device_data_t *devda
 	return DC_STATUS_SUCCESS;
 }
 
+// AI-generated (Claude)
+/**
+ * @brief libdc_fixup_cylinder_pressures adjusts the start and end pressures from
+ * libdivecomputer of the cylinders that have pressure samples
+ * A stage cylinder whose valve stays closed until the gas switch first reads the
+ * pressure left in its regulator, which can be far below the cylinder pressure.
+ * So if, deeper than the surface threshold, the second highest pressure sample of
+ * a cylinder is more than 10 bar above its first one, that becomes the start
+ * pressure. The second highest sample, so that a single bad reading doesn't count.
+ * The pressure graph still starts at the first sample, but the gas use and SAC rate
+ * of the cylinder are worked out from this start pressure.
+ * If clear_backend_pressures is set, the end pressure, and any start pressure that
+ * isn't adjusted, are cleared. libdivecomputer gives the first and last pressure
+ * samples, but Subsurface then uses the first and last samples deeper than the
+ * surface threshold, which gives more accurate SAC calculations by excluding
+ * breathing at the surface before and after the dive.
+ * The importers of other logbook software that call libdc_buffer_parser() fill in
+ * cylinder pressures from their own data where libdivecomputer gave none, so they
+ * don't clear them. Then the end pressure stays the one from libdivecomputer, and
+ * a start pressure from libdivecomputer is only raised, never lowered, as it may
+ * come from the dive computer's own record rather than from the samples.
+ * As elsewhere in the importer, the sensor index of a pressure sample is taken
+ * to be the cylinder index.
+ * @param dive The dive, with its cylinders and the samples of its first dive computer.
+ * @param clear_backend_pressures Whether to clear the start and end pressures of a
+ * cylinder with pressure samples, when its start pressure isn't adjusted.
+ */
+void libdc_fixup_cylinder_pressures(struct dive *dive, bool clear_backend_pressures)
+{
+	static constexpr int closed_valve_margin = 10000; // mbar
+	const auto &samples = dive->dcs[0].samples;
+
+	for (size_t i = 0; i < dive->cylinders.size(); i++) {
+		cylinder_t &cyl = dive->cylinders[i];
+		bool has_pressure_samples = false;
+		int first_pressure = 0, highest_pressure = 0, second_highest_pressure = 0;
+		for (const struct sample &s: samples) {
+			for (int j = 0; j < MAX_SENSORS; j++) {
+				if (s.sensor[j] != (int)i || s.pressure[j].mbar <= 0)
+					continue;
+				has_pressure_samples = true;
+				if (s.depth.mm < SURFACE_THRESHOLD)
+					continue;
+				int pressure = s.pressure[j].mbar;
+				if (!first_pressure)
+					first_pressure = pressure;
+				if (pressure > highest_pressure) {
+					second_highest_pressure = highest_pressure;
+					highest_pressure = pressure;
+				} else if (pressure > second_highest_pressure) {
+					second_highest_pressure = pressure;
+				}
+			}
+		}
+		if (!has_pressure_samples)
+			continue;
+		if (first_pressure && second_highest_pressure > first_pressure + closed_valve_margin) {
+			if (clear_backend_pressures || cyl.start.mbar < second_highest_pressure)
+				cyl.start = pressure_t { .mbar = second_highest_pressure };
+			if (clear_backend_pressures)
+				cyl.end = 0_bar;
+		} else if (clear_backend_pressures) {
+			cyl.start = 0_bar;
+			cyl.end = 0_bar;
+		}
+	}
+}
+
 /**
  * @brief dive_cb adds a dive downloaded from a dive computer to the dive log
  * This is the callback of libdivecomputer's dc_device_foreach().
@@ -1197,31 +1382,7 @@ static int dive_cb(const unsigned char *data, unsigned int size,
 	    dive->dcs[0].samples[1].temperature.mkelvin > dive->dcs[0].samples[0].temperature.mkelvin)
 		dive->dcs[0].samples[0].temperature.mkelvin = dive->dcs[0].samples[1].temperature.mkelvin;
 
-	/* If a cylinder has both start/end pressure from the backend AND pressure sensor
-	 * data in samples, clear the start/end pressure. libdivecomputer calculates these
-	 * from the first/last sample with pressure, but Subsurface uses first/last sample
-	 * below the surface threshold, which gives more accurate SAC calculations by
-	 * excluding breathing at the surface before/after the dive. */
-	for (size_t i = 0; i < dive->cylinders.size(); i++) {
-		cylinder_t &cyl = dive->cylinders[i];
-		if (cyl.start.mbar == 0 && cyl.end.mbar == 0)
-			continue;
-
-		/* Check if any sample has pressure data for this cylinder (sensor index == cylinder index) */
-		bool has_pressure_samples = std::any_of(dive->dcs[0].samples.begin(), dive->dcs[0].samples.end(),
-			[i](const struct sample &s) {
-				for (int j = 0; j < MAX_SENSORS; j++) {
-					if (s.sensor[j] == (int)i && s.pressure[j].mbar > 0)
-						return true;
-				}
-				return false;
-			});
-
-		if (has_pressure_samples) {
-			cyl.start.mbar = 0;
-			cyl.end.mbar = 0;
-		}
-	}
+	libdc_fixup_cylinder_pressures(dive.get(), true);
 
 	devdata->log->dives.record_dive(std::move(dive));
 	return true;
@@ -2078,6 +2239,9 @@ dc_status_t libdc_buffer_parser(struct dive *dive, device_data_t *data, const un
 		return rc;
 	}
 	dc_parser_destroy(parser);
+
+	// AI-generated (Claude)
+	libdc_fixup_cylinder_pressures(dive, false);
 
 	// Finalise GPS location data now that per-sample fixes are available.
 	// Per-sample fixes (DC_SAMPLE_LOCATION) take priority over DC_FIELD_LOCATION

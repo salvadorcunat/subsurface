@@ -125,11 +125,23 @@ if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable")
 		set_tests_properties(TestOstc4Dialog PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	set(TEST_OSTC4_DIALOG TestOstc4Dialog)
+
+	add_executable(TestTextHyperlinkEventFilter testtexthyperlinkeventfilter.cpp testtexthyperlinkeventfilter.h)
+	target_link_libraries(TestTextHyperlinkEventFilter subsurface_generated_ui subsurface_interface
+		subsurface_profile ${SUBSURFACE_MAPWIDGET} subsurface_backend_shared
+		subsurface_models_desktop subsurface_commands subsurface_corelib subsurface_stats
+		${QT_TEST_LIBRARIES} ${SUBSURFACE_LINK_LIBRARIES})
+	add_test(NAME TestTextHyperlinkEventFilter COMMAND $<TARGET_FILE:TestTextHyperlinkEventFilter>)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		set_tests_properties(TestTextHyperlinkEventFilter PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	set(TEST_TEXT_HYPERLINK_EVENT_FILTER TestTextHyperlinkEventFilter)
 endif()
 TEST(TestProfile testprofile.cpp)
 TEST(TestGpsCoords testgpscoords.cpp)
 TEST(TestParse testparse.cpp)
 TEST(TestLibdivecomputer testlibdivecomputer.cpp)
+TEST(TestTankGasGuess testtankgasguess.cpp)
 TEST(TestAirPressure testAirPressure.cpp)
 TEST(TestSurfaceGf testsurfacegf.cpp)
 TEST(TestOtuCns testotucns.cpp)
@@ -180,6 +192,38 @@ if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable" AND NOT NO_PRINTING
 	set(TEST_PRINTING TestPrinting)
 endif()
 
+if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "DesktopExecutable" AND NOT NO_USERMANUAL AND USINGQT6 AND QLITEHTML_FOUND)
+	add_executable(TestUserManual testusermanual.cpp testusermanual.h)
+	target_link_libraries(TestUserManual subsurface_generated_ui subsurface_interface
+		subsurface_profile ${SUBSURFACE_MAPWIDGET} subsurface_backend_shared
+		subsurface_models_desktop subsurface_commands subsurface_corelib subsurface_stats
+		RESOURCE_LIBRARY ${QT_TEST_LIBRARIES} ${SUBSURFACE_LINK_LIBRARIES})
+	if(BUILD_DOCS OR INSTALL_DOCS)
+		add_test(NAME TestUserManual COMMAND $<TARGET_FILE:TestUserManual>)
+		# The packaged manual is looked up next to the executable, but the build only stages it in
+		# the top level build directory. Make it visible next to TestUserManual as well. The script
+		# does nothing if the executable is built there already and never replaces anything but a
+		# link. This is not done for MSVC, where symlinks are avoided and the tests are not run.
+		add_dependencies(TestUserManual install_documentation)
+		if(NOT MSVC)
+			add_custom_command(TARGET TestUserManual POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -DTEST_DIR=$<TARGET_FILE_DIR:TestUserManual>
+					-DDOC_DIR=${CMAKE_BINARY_DIR}/Documentation
+					-P ${CMAKE_CURRENT_SOURCE_DIR}/stagemanual.cmake)
+		endif()
+	else()
+		# The packaged manual is only staged next to the build when the documentation is built
+		# or installed. Without it the packaged manual smoke test would skip itself, so only
+		# register the test that does not need it.
+		add_test(NAME TestUserManual COMMAND $<TARGET_FILE:TestUserManual> testLocalResourcesAnchorsAndSearch)
+		message(STATUS "TestUserManual does not cover the packaged manual, enable BUILD_DOCS or INSTALL_DOCS for that")
+	endif()
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		set_tests_properties(TestUserManual PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	set(TEST_USER_MANUAL TestUserManual)
+endif()
+
 #if (SUBSURFACE_TARGET_EXECUTABLE MATCHES "MobileExecutable")
 #TEST(TestPlannerShared testplannershared.cpp)
 #endif()
@@ -226,6 +270,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	TestUnitConversion
 	TestOstc4Settings
 	${TEST_OSTC4_DIALOG}
+	${TEST_TEXT_HYPERLINK_EVENT_FILTER}
 	TestProfile
 	TestGpsCoords
 	TestParse
@@ -243,6 +288,7 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 	${TEST_CYLINDERS_MODEL_SENSOR_REFRESH}
 	${TEST_PLANNER_SHARED}
 	${TEST_PRINTING}
+	${TEST_USER_MANUAL}
 	TestQPrefCloudStorage
 	TestCheckCloudConnection
 	TestQPrefDisplay
